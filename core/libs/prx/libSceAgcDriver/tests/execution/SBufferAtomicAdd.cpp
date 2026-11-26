@@ -140,6 +140,39 @@ void Run64(const Device& device, const Case64& test, bool returnOld) {
     }
 }
 
+template <typename Device>
+void RunAddressAdd(const Device& device, std::uint32_t opcode, bool wide, bool returnOld) {
+    constexpr std::uint64_t oldValue = 7u;
+    constexpr std::uint64_t operand = 5u;
+    const std::uint32_t storeOpcode = wide ? 0x19u : 0x18u;
+    Code = {0xf4000000u | (opcode << 18u) | ((returnOld ? 1u : 0u) << 16u) | (1u << 6u) | 6u, 0u,
+            0xf4000044u | (storeOpcode << 18u), 16u, 0xbf810000u, 0u};
+    Output.fill(0xdeadbeefu);
+    Output[2] = static_cast<std::uint32_t>(oldValue);
+    Output[3] = static_cast<std::uint32_t>(oldValue >> 32u);
+    std::vector<std::uint32_t> userData(16u, 0u);
+    userData[1] = static_cast<std::uint32_t>(operand);
+    userData[2] = static_cast<std::uint32_t>(operand >> 32u);
+    const auto descriptor = BufferDescriptor(Output.data(), static_cast<std::uint32_t>(sizeof(Output)));
+    std::copy(descriptor.begin(), descriptor.end(), userData.begin() + 8);
+    const auto address = reinterpret_cast<std::uintptr_t>(&Output[2]);
+    userData[12] = static_cast<std::uint32_t>(address);
+    userData[13] = static_cast<std::uint32_t>(address >> 32u);
+    const std::array<ShaderRecompiler::MemoryRegion, 1> memory{{{reinterpret_cast<std::uintptr_t>(Code.data()), std::as_bytes(std::span(Code))}}};
+    const ShaderRecompiler::ShaderComputeStageInfo compute{{32u, 1u, 1u}, 0u, {false, false, false}, false, 1u};
+    ShaderRecompiler::RecompileRequest request{{ShaderStage::Compute, reinterpret_cast<std::uintptr_t>(Code.data()), Code, 0u, {}}, {32u, 0u, userData, compute, std::nullopt, std::nullopt, memory}, device->Target(), {0u, 0u, 0u, 128u}};
+    request.useCache = false;
+    const auto result = ShaderRecompiler::Recompile(request);
+    device->Dispatch(result, 1u, 1u, 1u, {}, reinterpret_cast<std::uintptr_t>(Code.data()));
+    device->WaitIdle();
+    const std::uint64_t expectedMemory = oldValue + operand;
+    const std::uint64_t expectedReturn = returnOld ? oldValue : operand;
+    Require(Output[2] == static_cast<std::uint32_t>(expectedMemory), "S_ATOMIC_ADD memory low word mismatch");
+    if (wide) Require(Output[3] == static_cast<std::uint32_t>(expectedMemory >> 32u), "S_ATOMIC_ADD_X2 memory high word mismatch");
+    Require(Output[4] == static_cast<std::uint32_t>(expectedReturn), "S_ATOMIC_ADD return low word mismatch");
+    if (wide) Require(Output[5] == static_cast<std::uint32_t>(expectedReturn >> 32u), "S_ATOMIC_ADD_X2 return high word mismatch");
+}
+
 }
 
 int main() {
@@ -153,6 +186,10 @@ int main() {
         for (const auto& test : Cases64) {
             Run64(device, test, false);
             Run64(device, test, true);
+        }
+        for (const bool returnOld : {false, true}) {
+            RunAddressAdd(device, 0x82u, false, returnOld);
+            RunAddressAdd(device, 0xa2u, true, returnOld);
         }
         std::puts("scalar buffer atomic tests passed");
         return 0;

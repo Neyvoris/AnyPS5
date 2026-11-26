@@ -132,6 +132,42 @@ bool TranslationContext::sBufferAtomic(const RdnaInstruction& inst, IrOpcode opc
     return true;
 }
 
+bool TranslationContext::sAtomicAddress(const RdnaInstruction& inst, IrOpcode opcode) {
+    if (inst.source0.kind != RdnaOperandKind::ScalarRegister && inst.source0.kind != RdnaOperandKind::VccLo) {
+        throw std::runtime_error("scalar address atomic base must be a scalar register pair");
+    }
+    MemoryInfo memory;
+    memory.kind = ResourceKind::Global;
+    memory.offset = inst.memoryOffset;
+    memory.dataDwords = inst.dataDwordCount;
+    memory.componentCount = inst.dataDwordCount;
+    memory.coherent = inst.glc;
+    const std::uint32_t base = inst.source0.kind == RdnaOperandKind::VccLo ? 106u : inst.source0.reg;
+    IrValue* resource = getScalarAddressResource(base);
+    IrValue& lane = ir.Emit(IrOpcode::LaneId, IrType::U32, {});
+    IrValue& exec = ir.GetExec();
+    IrValue& first = ir.Emit(IrOpcode::ReadFirstLane, IrType::U32, {&lane, &exec});
+    IrValue& leader = ir.LogicalAnd(exec, ir.IEqual(lane, first));
+    const IrU32 offset = readU32(inst.source1);
+    const IrU32 high(ir.Constant(0u));
+    const MemoryFlags flags = addMemoryInfo(memory, inst.programCounter);
+    IrValue& result = IrOpcodeType(opcode) == IrType::U64
+        ? ir.Emit(opcode, IrType::U64, {resource, &offset.Value(), &high.Value(), &readU64(inst.destination).Value(), &leader}, flags)
+        : ir.Emit(opcode, IrType::U32, {resource, &offset.Value(), &high.Value(), &readU32(inst.destination).Value(), &leader}, flags);
+    if (inst.glc) {
+        if (IrOpcodeType(opcode) == IrType::U64) {
+            const auto words = extractU64(IrU64(result));
+            const IrU32 low(ir.Emit(IrOpcode::ReadFirstLane, IrType::U32, {&words[0].Value(), &leader}));
+            const IrU32 highWord(ir.Emit(IrOpcode::ReadFirstLane, IrType::U32, {&words[1].Value(), &leader}));
+            writeU32Pair(inst.destination, {low, highWord});
+        } else {
+            IrValue& returned = ir.Emit(IrOpcode::ReadFirstLane, IrType::U32, {&result, &leader});
+            writeOperand(inst.destination, &returned);
+        }
+    }
+    return true;
+}
+
 bool TranslationContext::sScratchLoad(const RdnaInstruction& /*inst*/) {
     throw std::runtime_error("s_scratch_load not yet implemented: wave-uniform or swizzled scratch layout required");
 }

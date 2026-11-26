@@ -728,6 +728,8 @@ enum class RdnaOpcode : std::uint16_t {
     SBufferAtomicCmpswapX2,
     SBufferAtomicIncX2,
     SBufferAtomicDecX2,
+    SAtomicAdd,
+    SAtomicAddX2,
     SGetWaveidInWorkgroup,
     BufferStoreFormatXy,
     BufferStoreFormatXyz,

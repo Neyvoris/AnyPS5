@@ -86,6 +86,34 @@ void Check(const Case& test, bool returnOld) {
     Require(atomics == 1u && firstLanes == (returnOld ? 1u + test.dataDwords : 1u));
 }
 
+void CheckAddressAdd(std::uint32_t opcode, RdnaOpcode decoded, IrOpcode lowered, std::uint32_t dataDwords, bool returnOld) {
+    const std::uint32_t glc = returnOld ? 1u : 0u;
+    const std::array code{0xf4000000u | (opcode << 18u) | (glc << 16u) | (1u << 6u) | 6u, 8u};
+    const auto instruction = DecodeRdnaSmem(0u, code, 0u);
+    Require(instruction.op == decoded && instruction.glc == returnOld);
+    Require(instruction.destination.kind == RdnaOperandKind::ScalarRegister && instruction.destination.reg == 1u);
+    Require(instruction.source0.kind == RdnaOperandKind::ScalarRegister && instruction.source0.reg == 12u);
+    Require(instruction.source1.kind == RdnaOperandKind::ScalarRegister && instruction.source1.reg == 0u);
+    Require(instruction.memoryOffset == 8u && instruction.dataDwordCount == dataDwords);
+
+    IrProgram program;
+    auto& block = program.CreateBlock();
+    program.SetEntryBlock(block);
+    TranslationContext context(program, block, 256u);
+    context.TranslateInstruction(instruction);
+    std::uint32_t atomics = 0u;
+    std::uint32_t firstLanes = 0u;
+    for (const auto* value : block.Instructions()) {
+        if (value->Opcode() == IrOpcode::ReadFirstLane) ++firstLanes;
+        if (value->Opcode() != lowered) continue;
+        ++atomics;
+        const auto& memory = program.Resources().memoryInfo.at(value->Flags<MemoryFlags>().index);
+        Require(memory.kind == ResourceKind::Global && memory.offset == 8u && memory.dataDwords == dataDwords);
+        Require(value->ArgumentCount() == 5u && value->Argument(4u)->Opcode() == IrOpcode::LogicalAnd);
+    }
+    Require(atomics == 1u && firstLanes == (returnOld ? 1u + dataDwords : 1u));
+}
+
 }
 
 int main() {
@@ -93,4 +121,8 @@ int main() {
         Check(test, false);
         Check(test, true);
     }
+    CheckAddressAdd(0x82u, RdnaOpcode::SAtomicAdd, IrOpcode::AddressAtomicIAdd32, 1u, false);
+    CheckAddressAdd(0x82u, RdnaOpcode::SAtomicAdd, IrOpcode::AddressAtomicIAdd32, 1u, true);
+    CheckAddressAdd(0xa2u, RdnaOpcode::SAtomicAddX2, IrOpcode::AddressAtomicIAdd64, 2u, false);
+    CheckAddressAdd(0xa2u, RdnaOpcode::SAtomicAddX2, IrOpcode::AddressAtomicIAdd64, 2u, true);
 }

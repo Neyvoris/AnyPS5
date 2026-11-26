@@ -677,6 +677,8 @@ bool IsScalarMemoryOpcode(RdnaOpcode opcode) {
         case RdnaOpcode::SBufferAtomicCmpswapX2:
         case RdnaOpcode::SBufferAtomicIncX2:
         case RdnaOpcode::SBufferAtomicDecX2:
+        case RdnaOpcode::SAtomicAdd:
+        case RdnaOpcode::SAtomicAddX2:
         case RdnaOpcode::SScratchLoadDword:
         case RdnaOpcode::SScratchLoadDwordx2:
         case RdnaOpcode::SScratchLoadDwordx4:
