@@ -24,6 +24,7 @@ constexpr std::uint32_t Height = 3;
 constexpr std::uint32_t Levels = 2;
 constexpr std::size_t Bytes = 16384;
 constexpr std::uint32_t Sentinel = 0xcafe0000u;
+constexpr std::uint32_t StoreWord = 0x44332211u;
 constexpr std::uint32_t R8UInt = 5;
 constexpr std::uint32_t R16UInt = 11;
 constexpr std::uint32_t Rg8UInt = 18;
@@ -38,11 +39,11 @@ struct Format {
     std::uint32_t components;
 };
 
-std::vector<std::uint32_t> Code(std::uint32_t opcode, std::uint32_t dmask) {
+std::vector<std::uint32_t> Code(std::uint32_t opcode, std::uint32_t dmask, bool store = false) {
     std::vector<std::uint32_t> code{0x34060084u, 0xe0381000u, 0x80031e03u, 0xbf8c3f70u};
     for (std::uint32_t index = 0; index < 4u; ++index) {
         code.push_back(0x7e0002ffu | ((10u + index) << 17u));
-        code.push_back(Sentinel + index);
+        code.push_back(store && index == 0u ? StoreWord : Sentinel + index);
     }
     code.push_back(0xf0000008u | (opcode << 18u) | (dmask << 8u));
     code.push_back(0x00010a1eu);
@@ -103,8 +104,8 @@ void FillInput() {
     }
 }
 
-void Run(AgcDriver::VulkanDevice& device, std::uint32_t opcode, std::uint32_t format, std::uint32_t dmask, std::uint32_t swizzle = 0xfacu) {
-    const auto code = Code(opcode, dmask);
+void Run(AgcDriver::VulkanDevice& device, std::uint32_t opcode, std::uint32_t format, std::uint32_t dmask, std::uint32_t swizzle = 0xfacu, bool store = false) {
+    const auto code = Code(opcode, dmask, store);
     std::vector<std::uint32_t> userData(16, 0u);
     const auto output = BufferDescriptor(Output.data(), static_cast<std::uint32_t>(sizeof(Output)));
     const auto descriptor = Descriptor(format, swizzle);
@@ -157,11 +158,75 @@ void Check(AgcDriver::VulkanDevice& device, std::uint32_t opcode, const Format& 
     Require(Texels == initial, name + ": the load changed the texture");
 }
 
+void FillStoreInput(std::uint32_t elements, bool mip) {
+    const auto level = mip ? 1u : 0u;
+    const auto width = std::max(Width >> level, 1u);
+    const auto height = std::max(Height >> level, 1u);
+    const auto groupsPerRow = (width + elements - 1u) / elements;
+    const auto validGroups = groupsPerRow * height;
+    for (std::uint32_t thread = 0; thread < Threads; ++thread) {
+        if (thread < validGroups) {
+            Input[thread * 4u] = (thread % groupsPerRow) * elements;
+            Input[thread * 4u + 1u] = thread / groupsPerRow;
+            Input[thread * 4u + 2u] = level;
+        } else {
+            Input[thread * 4u] = width;
+            Input[thread * 4u + 1u] = 0u;
+            Input[thread * 4u + 2u] = mip ? Levels : 0u;
+        }
+        Input[thread * 4u + 3u] = 0u;
+    }
+}
+
+void CheckStore(AgcDriver::VulkanDevice& device, std::uint32_t opcode, const Format& format, std::uint32_t elements) {
+    const bool mip = opcode == 0x79u || opcode == 0x7au;
+    const auto texelBits = format.bytes * format.components * 8u;
+    const auto name = "image PCK store opcode " + std::to_string(opcode) + " format " + std::to_string(format.id);
+    Require(texelBits * elements <= 32u, name + ": invalid test input layout");
+    FillTexels(format);
+    const auto initial = Texels;
+    FillStoreInput(elements, mip);
+    auto expected = Texels;
+    const auto descriptor = Descriptor(format.id, 0xfacu);
+    const auto surface = AgcDriver::Graphics::DescribeSurface(AgcDriver::Graphics::DecodeTextureResource(descriptor));
+    const auto level = mip ? 1u : 0u;
+    const auto width = std::max(Width >> level, 1u);
+    const auto height = std::max(Height >> level, 1u);
+    const auto& mipInfo = surface.mips[level];
+    for (std::uint32_t thread = 0; thread < Threads; ++thread) {
+        const auto x = Input[thread * 4u];
+        const auto y = Input[thread * 4u + 1u];
+        const auto requestedLevel = mip ? Input[thread * 4u + 2u] : 0u;
+        if (requestedLevel >= Levels || x >= width || width - x < elements || y >= height) continue;
+        const auto first = x & ~(elements - 1u);
+        for (std::uint32_t element = 0; element < elements; ++element) {
+            const auto texel = first + element;
+            for (std::uint32_t component = 0; component < format.components; ++component) {
+                const auto bits = format.bytes * 8u;
+                const auto shift = element * texelBits + component * bits;
+                const auto mask = bits == 32u ? 0xffffffffu : (1u << bits) - 1u;
+                const auto value = (StoreWord >> shift) & mask;
+                const auto offset = mipInfo.tiledOffset + static_cast<std::uint64_t>(y) * mipInfo.pitchBytes + (texel * format.components + component) * format.bytes;
+                std::memcpy(expected.data() + offset, &value, format.bytes);
+            }
+        }
+    }
+    Output.fill(0xdeadbeefu);
+    Run(device, opcode, format.id, 0x1u, 0xfacu, true);
+    AgcDriver::Graphics::StorageTexture::FlushAllPending("image PCK store test");
+    if (Texels != expected) {
+        const auto mismatch = std::mismatch(Texels.begin(), Texels.end(), expected.begin());
+        const auto offset = static_cast<std::size_t>(mismatch.first - Texels.begin());
+        throw std::runtime_error(name + ": byte " + std::to_string(offset) + " is " + std::to_string(*mismatch.first) + ", expected " + std::to_string(*mismatch.second) + ", initial " + std::to_string(initial[offset]));
+    }
+}
+
 void Refused(AgcDriver::VulkanDevice& device, std::uint32_t opcode, std::uint32_t format, std::uint32_t dmask, std::uint32_t swizzle, const char* reason) {
     bool refused = false;
+    std::string actual;
     try { Run(device, opcode, format, dmask, swizzle); }
-    catch (const std::exception& error) { refused = std::string(error.what()).find(reason) != std::string::npos; }
-    Require(refused, "image PCK opcode " + std::to_string(opcode) + " format " + std::to_string(format) + " was not refused");
+    catch (const std::exception& error) { actual = error.what(); refused = actual.find(reason) != std::string::npos; }
+    Require(refused, "image PCK opcode " + std::to_string(opcode) + " format " + std::to_string(format) + " was not refused" + (actual.empty() ? std::string{} : ": " + actual));
 }
 
 }
@@ -185,7 +250,16 @@ int main() {
         Refused(*device, 0x71u, R16UInt, 0x1u, 0xfacu, layout);
         Refused(*device, 0x71u, Rg8UInt, 0x1u, 0xfacu, layout);
         Refused(*device, 0x70u, R16UInt, 0x1u, 0xf2eu, "identity swizzle");
-        for (const auto opcode : {0x76u, 0x77u, 0x79u, 0x7au}) Refused(*device, opcode, R8UInt, 0x1u, 0xfacu, "stores are not implemented");
+        for (const auto opcode : {0x76u, 0x79u}) {
+            CheckStore(*device, opcode, r8, 2u);
+            CheckStore(*device, opcode, r16, 2u);
+            CheckStore(*device, opcode, rg8, 2u);
+        }
+        for (const auto opcode : {0x77u, 0x7au}) CheckStore(*device, opcode, r8, 4u);
+        constexpr auto storeSubset = "requires an identity-swizzled 2D UNORM, UINT or SINT image";
+        Refused(*device, 0x76u, R32UInt, 0x1u, 0xfacu, storeSubset);
+        Refused(*device, 0x77u, R16UInt, 0x1u, 0xfacu, storeSubset);
+        Refused(*device, 0x7au, Rg8UInt, 0x1u, 0xfacu, storeSubset);
         GuestAllocations::Mutation().Remove(Texels.data());
         std::cout << "image PCK2/PCK4 execution tests passed\n";
         return 0;
