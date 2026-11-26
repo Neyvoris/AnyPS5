@@ -90,6 +90,34 @@ bool TranslationContext::sBufferStore(const RdnaInstruction& inst) {
     return true;
 }
 
+bool TranslationContext::sBufferAtomicAdd(const RdnaInstruction& inst) {
+    if (inst.source0.kind != RdnaOperandKind::ScalarRegister) {
+        throw std::runtime_error("scalar buffer atomic descriptor must be a scalar register");
+    }
+    MemoryInfo memory;
+    memory.kind = ResourceKind::Buffer;
+    memory.resource = inst.source0.reg / 4u;
+    memory.offset = inst.memoryOffset;
+    memory.dataDwords = 1u;
+    memory.componentCount = 1u;
+    IrValue* resource = getBufferResource(memory);
+    IrValue& lane = ir.Emit(IrOpcode::LaneId, IrType::U32, {});
+    IrValue& exec = ir.GetExec();
+    IrValue& first = ir.Emit(IrOpcode::ReadFirstLane, IrType::U32, {&lane, &exec});
+    IrValue& leader = ir.LogicalAnd(exec, ir.IEqual(lane, first));
+    const IrU32 data = readU32(inst.destination);
+    const IrU32 offset(ir.Constant(0u));
+    const IrU32 soffset = readU32(inst.source1);
+    IrValue& result = ir.Emit(IrOpcode::BufferAtomicIAdd32, IrType::U32,
+                              {resource, &ir.Constant(0u), &offset.Value(), &soffset.Value(), &data.Value(), &leader},
+                              addMemoryInfo(memory, inst.programCounter));
+    if (inst.glc) {
+        IrValue& returned = ir.Emit(IrOpcode::ReadFirstLane, IrType::U32, {&result, &leader});
+        writeOperand(inst.destination, &returned);
+    }
+    return true;
+}
+
 bool TranslationContext::sScratchLoad(const RdnaInstruction& /*inst*/) {
     throw std::runtime_error("s_scratch_load not yet implemented: wave-uniform or swizzled scratch layout required");
 }

@@ -702,6 +702,7 @@ enum class RdnaOpcode : std::uint16_t {
     SBufferStoreDword,
     SBufferStoreDwordx2,
     SBufferStoreDwordx4,
+    SBufferAtomicAdd,
     SGetWaveidInWorkgroup,
     BufferStoreFormatXy,
     BufferStoreFormatXyz,

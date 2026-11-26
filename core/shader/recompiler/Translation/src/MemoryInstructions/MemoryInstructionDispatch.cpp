@@ -58,6 +58,8 @@ bool TranslationContext::emitMemory(const RdnaInstruction& inst) {
     case RdnaOpcode::SBufferStoreDwordx2:
     case RdnaOpcode::SBufferStoreDwordx4:
         return sBufferStore(inst);
+    case RdnaOpcode::SBufferAtomicAdd:
+        return sBufferAtomicAdd(inst);
     case RdnaOpcode::SScratchLoadDword:
     case RdnaOpcode::SScratchLoadDwordx2:
     case RdnaOpcode::SScratchLoadDwordx4:
