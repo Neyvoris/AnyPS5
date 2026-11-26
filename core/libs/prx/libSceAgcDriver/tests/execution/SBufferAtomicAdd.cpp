@@ -68,6 +68,19 @@ constexpr std::array Cases64{
     Case64{0x61u, "cmpswap_x2", CompareSwap64}, Case64{0x6bu, "inc_x2", Inc64}, Case64{0x6cu, "dec_x2", Dec64},
 };
 
+constexpr std::array AddressCases32{
+    Case{0x80u, "s_swap", Swap}, Case{0x81u, "s_cmpswap", CompareSwap}, Case{0x82u, "s_add", Add},
+    Case{0x83u, "s_sub", Sub}, Case{0x84u, "s_smin", Smin}, Case{0x85u, "s_umin", Umin},
+    Case{0x86u, "s_smax", Smax}, Case{0x87u, "s_umax", Umax}, Case{0x88u, "s_and", And},
+    Case{0x89u, "s_or", Or}, Case{0x8au, "s_xor", Xor}, Case{0x8bu, "s_inc", Inc}, Case{0x8cu, "s_dec", Dec},
+};
+constexpr std::array AddressCases64{
+    Case64{0xa0u, "s_swap_x2", Swap64}, Case64{0xa1u, "s_cmpswap_x2", CompareSwap64}, Case64{0xa2u, "s_add_x2", Add64},
+    Case64{0xa3u, "s_sub_x2", Sub64}, Case64{0xa4u, "s_smin_x2", Smin64}, Case64{0xa5u, "s_umin_x2", Umin64},
+    Case64{0xa6u, "s_smax_x2", Smax64}, Case64{0xa7u, "s_umax_x2", Umax64}, Case64{0xa8u, "s_and_x2", And64},
+    Case64{0xa9u, "s_or_x2", Or64}, Case64{0xaau, "s_xor_x2", Xor64}, Case64{0xabu, "s_inc_x2", Inc64}, Case64{0xacu, "s_dec_x2", Dec64},
+};
+
 alignas(256) std::array<std::uint32_t, 6> Code{};
 alignas(256) std::array<std::uint32_t, 8> Output{};
 
@@ -174,6 +187,66 @@ void RunAddressAdd(const Device& device, std::uint32_t opcode, bool wide, bool r
 }
 
 template <typename Device>
+void RunScalarAddressAtomic(const Device& device, const Case& test, bool returnOld) {
+    constexpr std::uint32_t oldValue = 0x80000010u;
+    constexpr std::uint32_t operand = 0x7ffffff0u;
+    Code = {0xf4000000u | (test.opcode << 18u) | ((returnOld ? 1u : 0u) << 16u) | (1u << 6u) | 6u, 0u,
+            0xf4000044u | (0x18u << 18u), 16u, 0xbf810000u, 0u};
+    Output.fill(0xdeadbeefu);
+    Output[2] = oldValue;
+    std::vector<std::uint32_t> userData(16u, 0u);
+    userData[1] = operand;
+    if (test.opcode == 0x81u) userData[2] = oldValue;
+    const auto descriptor = BufferDescriptor(Output.data(), static_cast<std::uint32_t>(sizeof(Output)));
+    std::copy(descriptor.begin(), descriptor.end(), userData.begin() + 8);
+    const auto address = reinterpret_cast<std::uintptr_t>(&Output[2]);
+    userData[12] = static_cast<std::uint32_t>(address);
+    userData[13] = static_cast<std::uint32_t>(address >> 32u);
+    const std::array<ShaderRecompiler::MemoryRegion, 1> memory{{{reinterpret_cast<std::uintptr_t>(Code.data()), std::as_bytes(std::span(Code))}}};
+    const ShaderRecompiler::ShaderComputeStageInfo compute{{32u, 1u, 1u}, 0u, {false, false, false}, false, 1u};
+    ShaderRecompiler::RecompileRequest request{{ShaderStage::Compute, reinterpret_cast<std::uintptr_t>(Code.data()), Code, 0u, {}}, {32u, 0u, userData, compute, std::nullopt, std::nullopt, memory}, device->Target(), {0u, 0u, 0u, 128u}};
+    request.useCache = false;
+    const auto result = ShaderRecompiler::Recompile(request);
+    device->Dispatch(result, 1u, 1u, 1u, {}, reinterpret_cast<std::uintptr_t>(Code.data()));
+    device->WaitIdle();
+    Require(Output[2] == test.apply(oldValue, operand), "scalar address atomic " + std::string(test.name) + " memory mismatch");
+    Require(Output[4] == (returnOld ? oldValue : operand), "scalar address atomic " + std::string(test.name) + " return mismatch");
+}
+
+template <typename Device>
+void RunScalarAddressAtomic(const Device& device, const Case64& test, bool returnOld) {
+    constexpr std::uint64_t oldValue = 0x8000000100000010ull;
+    constexpr std::uint64_t operand = 0x7fffffff000000f0ull;
+    Code = {0xf4000000u | (test.opcode << 18u) | ((returnOld ? 1u : 0u) << 16u) | (1u << 6u) | 6u, 0u,
+            0xf4000044u | (0x19u << 18u), 16u, 0xbf810000u, 0u};
+    Output.fill(0xdeadbeefu);
+    Output[2] = static_cast<std::uint32_t>(oldValue);
+    Output[3] = static_cast<std::uint32_t>(oldValue >> 32u);
+    std::vector<std::uint32_t> userData(16u, 0u);
+    userData[1] = static_cast<std::uint32_t>(operand);
+    userData[2] = static_cast<std::uint32_t>(operand >> 32u);
+    if (test.opcode == 0xa1u) {
+        userData[3] = static_cast<std::uint32_t>(oldValue);
+        userData[4] = static_cast<std::uint32_t>(oldValue >> 32u);
+    }
+    const auto descriptor = BufferDescriptor(Output.data(), static_cast<std::uint32_t>(sizeof(Output)));
+    std::copy(descriptor.begin(), descriptor.end(), userData.begin() + 8);
+    const auto address = reinterpret_cast<std::uintptr_t>(&Output[2]);
+    userData[12] = static_cast<std::uint32_t>(address);
+    userData[13] = static_cast<std::uint32_t>(address >> 32u);
+    const std::array<ShaderRecompiler::MemoryRegion, 1> memory{{{reinterpret_cast<std::uintptr_t>(Code.data()), std::as_bytes(std::span(Code))}}};
+    const ShaderRecompiler::ShaderComputeStageInfo compute{{32u, 1u, 1u}, 0u, {false, false, false}, false, 1u};
+    ShaderRecompiler::RecompileRequest request{{ShaderStage::Compute, reinterpret_cast<std::uintptr_t>(Code.data()), Code, 0u, {}}, {32u, 0u, userData, compute, std::nullopt, std::nullopt, memory}, device->Target(), {0u, 0u, 0u, 128u}};
+    request.useCache = false;
+    const auto result = ShaderRecompiler::Recompile(request);
+    device->Dispatch(result, 1u, 1u, 1u, {}, reinterpret_cast<std::uintptr_t>(Code.data()));
+    device->WaitIdle();
+    Require((static_cast<std::uint64_t>(Output[3]) << 32u | Output[2]) == test.apply(oldValue, operand), "scalar address atomic " + std::string(test.name) + " memory mismatch");
+    const std::uint64_t returned = static_cast<std::uint64_t>(Output[5]) << 32u | Output[4];
+    Require(returned == (returnOld ? oldValue : operand), "scalar address atomic " + std::string(test.name) + " return mismatch");
+}
+
+template <typename Device>
 void RunAddressStore(const Device& device, std::uint32_t opcode, std::uint32_t dwords) {
     Code = {0xf4000000u | (opcode << 18u) | (1u << 6u) | 6u, 0u,
             0xf4000000u | (0x18u << 18u) | (5u << 6u) | 4u, 28u, 0xbf810000u, 0u};
@@ -217,6 +290,8 @@ int main() {
         for (const bool returnOld : {false, true}) {
             RunAddressAdd(device, 0x82u, false, returnOld);
             RunAddressAdd(device, 0xa2u, true, returnOld);
+            for (const auto& test : AddressCases32) RunScalarAddressAtomic(device, test, returnOld);
+            for (const auto& test : AddressCases64) RunScalarAddressAtomic(device, test, returnOld);
         }
         RunAddressStore(device, 0x10u, 1u);
         RunAddressStore(device, 0x11u, 2u);

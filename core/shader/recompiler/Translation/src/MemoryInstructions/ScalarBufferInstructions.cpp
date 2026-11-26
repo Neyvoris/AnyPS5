@@ -151,9 +151,12 @@ bool TranslationContext::sAtomicAddress(const RdnaInstruction& inst, IrOpcode op
     const IrU32 offset = readU32(inst.source1);
     const IrU32 high(ir.Constant(0u));
     const MemoryFlags flags = addMemoryInfo(memory, inst.programCounter);
+    const bool compare = opcode == IrOpcode::AddressAtomicCmpSwap32 || opcode == IrOpcode::AddressAtomicCmpSwap64;
     IrValue& result = IrOpcodeType(opcode) == IrType::U64
-        ? ir.Emit(opcode, IrType::U64, {resource, &offset.Value(), &high.Value(), &readU64(inst.destination).Value(), &leader}, flags)
-        : ir.Emit(opcode, IrType::U32, {resource, &offset.Value(), &high.Value(), &readU32(inst.destination).Value(), &leader}, flags);
+        ? (compare ? ir.Emit(opcode, IrType::U64, {resource, &offset.Value(), &high.Value(), &readU64(inst.destination).Value(), &readU64(offsetOperand(inst.destination, 2u)).Value(), &leader}, flags)
+                   : ir.Emit(opcode, IrType::U64, {resource, &offset.Value(), &high.Value(), &readU64(inst.destination).Value(), &leader}, flags))
+        : (compare ? ir.Emit(opcode, IrType::U32, {resource, &offset.Value(), &high.Value(), &readU32(inst.destination).Value(), &readU32(offsetOperand(inst.destination, 1u)).Value(), &leader}, flags)
+                   : ir.Emit(opcode, IrType::U32, {resource, &offset.Value(), &high.Value(), &readU32(inst.destination).Value(), &leader}, flags));
     if (inst.glc) {
         if (IrOpcodeType(opcode) == IrType::U64) {
             const auto words = extractU64(IrU64(result));

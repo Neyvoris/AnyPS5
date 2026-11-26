@@ -679,6 +679,30 @@ bool IsScalarMemoryOpcode(RdnaOpcode opcode) {
         case RdnaOpcode::SBufferAtomicDecX2:
         case RdnaOpcode::SAtomicAdd:
         case RdnaOpcode::SAtomicAddX2:
+        case RdnaOpcode::SAtomicSwap:
+        case RdnaOpcode::SAtomicCmpswap:
+        case RdnaOpcode::SAtomicSub:
+        case RdnaOpcode::SAtomicSmin:
+        case RdnaOpcode::SAtomicUmin:
+        case RdnaOpcode::SAtomicSmax:
+        case RdnaOpcode::SAtomicUmax:
+        case RdnaOpcode::SAtomicAnd:
+        case RdnaOpcode::SAtomicOr:
+        case RdnaOpcode::SAtomicXor:
+        case RdnaOpcode::SAtomicInc:
+        case RdnaOpcode::SAtomicDec:
+        case RdnaOpcode::SAtomicSwapX2:
+        case RdnaOpcode::SAtomicCmpswapX2:
+        case RdnaOpcode::SAtomicSubX2:
+        case RdnaOpcode::SAtomicSminX2:
+        case RdnaOpcode::SAtomicUminX2:
+        case RdnaOpcode::SAtomicSmaxX2:
+        case RdnaOpcode::SAtomicUmaxX2:
+        case RdnaOpcode::SAtomicAndX2:
+        case RdnaOpcode::SAtomicOrX2:
+        case RdnaOpcode::SAtomicXorX2:
+        case RdnaOpcode::SAtomicIncX2:
+        case RdnaOpcode::SAtomicDecX2:
         case RdnaOpcode::SStoreDword:
         case RdnaOpcode::SStoreDwordX2:
         case RdnaOpcode::SStoreDwordX4:

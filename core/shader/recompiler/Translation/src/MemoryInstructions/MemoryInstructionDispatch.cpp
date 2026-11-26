@@ -114,6 +114,30 @@ bool TranslationContext::emitMemory(const RdnaInstruction& inst) {
         return sAtomicAddress(inst, IrOpcode::AddressAtomicIAdd32);
     case RdnaOpcode::SAtomicAddX2:
         return sAtomicAddress(inst, IrOpcode::AddressAtomicIAdd64);
+    case RdnaOpcode::SAtomicSwap: return sAtomicAddress(inst, IrOpcode::AddressAtomicSwap32);
+    case RdnaOpcode::SAtomicCmpswap: return sAtomicAddress(inst, IrOpcode::AddressAtomicCmpSwap32);
+    case RdnaOpcode::SAtomicSub: return sAtomicAddress(inst, IrOpcode::AddressAtomicISub32);
+    case RdnaOpcode::SAtomicSmin: return sAtomicAddress(inst, IrOpcode::AddressAtomicSMin32);
+    case RdnaOpcode::SAtomicUmin: return sAtomicAddress(inst, IrOpcode::AddressAtomicUMin32);
+    case RdnaOpcode::SAtomicSmax: return sAtomicAddress(inst, IrOpcode::AddressAtomicSMax32);
+    case RdnaOpcode::SAtomicUmax: return sAtomicAddress(inst, IrOpcode::AddressAtomicUMax32);
+    case RdnaOpcode::SAtomicAnd: return sAtomicAddress(inst, IrOpcode::AddressAtomicAnd32);
+    case RdnaOpcode::SAtomicOr: return sAtomicAddress(inst, IrOpcode::AddressAtomicOr32);
+    case RdnaOpcode::SAtomicXor: return sAtomicAddress(inst, IrOpcode::AddressAtomicXor32);
+    case RdnaOpcode::SAtomicInc: return sAtomicAddress(inst, IrOpcode::AddressAtomicInc32);
+    case RdnaOpcode::SAtomicDec: return sAtomicAddress(inst, IrOpcode::AddressAtomicDec32);
+    case RdnaOpcode::SAtomicSwapX2: return sAtomicAddress(inst, IrOpcode::AddressAtomicSwap64);
+    case RdnaOpcode::SAtomicCmpswapX2: return sAtomicAddress(inst, IrOpcode::AddressAtomicCmpSwap64);
+    case RdnaOpcode::SAtomicSubX2: return sAtomicAddress(inst, IrOpcode::AddressAtomicISub64);
+    case RdnaOpcode::SAtomicSminX2: return sAtomicAddress(inst, IrOpcode::AddressAtomicSMin64);
+    case RdnaOpcode::SAtomicUminX2: return sAtomicAddress(inst, IrOpcode::AddressAtomicUMin64);
+    case RdnaOpcode::SAtomicSmaxX2: return sAtomicAddress(inst, IrOpcode::AddressAtomicSMax64);
+    case RdnaOpcode::SAtomicUmaxX2: return sAtomicAddress(inst, IrOpcode::AddressAtomicUMax64);
+    case RdnaOpcode::SAtomicAndX2: return sAtomicAddress(inst, IrOpcode::AddressAtomicAnd64);
+    case RdnaOpcode::SAtomicOrX2: return sAtomicAddress(inst, IrOpcode::AddressAtomicOr64);
+    case RdnaOpcode::SAtomicXorX2: return sAtomicAddress(inst, IrOpcode::AddressAtomicXor64);
+    case RdnaOpcode::SAtomicIncX2: return sAtomicAddress(inst, IrOpcode::AddressAtomicInc64);
+    case RdnaOpcode::SAtomicDecX2: return sAtomicAddress(inst, IrOpcode::AddressAtomicDec64);
     case RdnaOpcode::SStoreDword:
     case RdnaOpcode::SStoreDwordX2:
     case RdnaOpcode::SStoreDwordX4:
