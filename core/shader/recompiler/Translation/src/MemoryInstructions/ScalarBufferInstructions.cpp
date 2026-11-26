@@ -98,20 +98,24 @@ bool TranslationContext::sBufferAtomic(const RdnaInstruction& inst, IrOpcode opc
     memory.kind = ResourceKind::Buffer;
     memory.resource = inst.source0.reg / 4u;
     memory.offset = inst.memoryOffset;
-    memory.dataDwords = 1u;
-    memory.componentCount = 1u;
+    memory.dataDwords = inst.dataDwordCount;
+    memory.componentCount = inst.dataDwordCount;
     IrValue* resource = getBufferResource(memory);
     IrValue& lane = ir.Emit(IrOpcode::LaneId, IrType::U32, {});
     IrValue& exec = ir.GetExec();
     IrValue& first = ir.Emit(IrOpcode::ReadFirstLane, IrType::U32, {&lane, &exec});
     IrValue& leader = ir.LogicalAnd(exec, ir.IEqual(lane, first));
-    const IrU32 data = readU32(inst.destination);
     const IrU32 offset(ir.Constant(0u));
     const IrU32 soffset = readU32(inst.source1);
-    IrValue& result = ir.Emit(opcode, IrOpcodeType(opcode),
-                              {resource, &ir.Constant(0u), &offset.Value(), &soffset.Value(), &data.Value(), &leader},
-                              addMemoryInfo(memory, inst.programCounter));
-    if (inst.glc) {
+    IrValue& result = IrOpcodeType(opcode) == IrType::U64
+        ? ir.Emit(opcode, IrType::U64, {resource, &ir.Constant(0u), &offset.Value(), &soffset.Value(), &readU64(inst.destination).Value(), &leader}, addMemoryInfo(memory, inst.programCounter))
+        : ir.Emit(opcode, IrType::U32, {resource, &ir.Constant(0u), &offset.Value(), &soffset.Value(), &readU32(inst.destination).Value(), &leader}, addMemoryInfo(memory, inst.programCounter));
+    if (inst.glc && IrOpcodeType(opcode) == IrType::U64) {
+        const auto words = extractU64(IrU64(result));
+        const IrU32 low(ir.Emit(IrOpcode::ReadFirstLane, IrType::U32, {&words[0].Value(), &leader}));
+        const IrU32 high(ir.Emit(IrOpcode::ReadFirstLane, IrType::U32, {&words[1].Value(), &leader}));
+        writeU32Pair(inst.destination, {low, high});
+    } else if (inst.glc) {
         IrValue& returned = ir.Emit(IrOpcode::ReadFirstLane, IrType::U32, {&result, &leader});
         writeOperand(inst.destination, &returned);
     }

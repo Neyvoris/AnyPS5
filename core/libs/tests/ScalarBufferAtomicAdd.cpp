@@ -13,19 +13,30 @@ struct Case {
     std::uint32_t opcode;
     RdnaOpcode decoded;
     IrOpcode lowered;
+    std::uint32_t dataDwords;
 };
 
 constexpr std::array Cases{
-    Case{0x40u, RdnaOpcode::SBufferAtomicSwap, IrOpcode::BufferAtomicSwap32},
-    Case{0x42u, RdnaOpcode::SBufferAtomicAdd, IrOpcode::BufferAtomicIAdd32},
-    Case{0x43u, RdnaOpcode::SBufferAtomicSub, IrOpcode::BufferAtomicISub32},
-    Case{0x44u, RdnaOpcode::SBufferAtomicSmin, IrOpcode::BufferAtomicSMin32},
-    Case{0x45u, RdnaOpcode::SBufferAtomicUmin, IrOpcode::BufferAtomicUMin32},
-    Case{0x46u, RdnaOpcode::SBufferAtomicSmax, IrOpcode::BufferAtomicSMax32},
-    Case{0x47u, RdnaOpcode::SBufferAtomicUmax, IrOpcode::BufferAtomicUMax32},
-    Case{0x48u, RdnaOpcode::SBufferAtomicAnd, IrOpcode::BufferAtomicAnd32},
-    Case{0x49u, RdnaOpcode::SBufferAtomicOr, IrOpcode::BufferAtomicOr32},
-    Case{0x4au, RdnaOpcode::SBufferAtomicXor, IrOpcode::BufferAtomicXor32},
+    Case{0x40u, RdnaOpcode::SBufferAtomicSwap, IrOpcode::BufferAtomicSwap32, 1u},
+    Case{0x42u, RdnaOpcode::SBufferAtomicAdd, IrOpcode::BufferAtomicIAdd32, 1u},
+    Case{0x43u, RdnaOpcode::SBufferAtomicSub, IrOpcode::BufferAtomicISub32, 1u},
+    Case{0x44u, RdnaOpcode::SBufferAtomicSmin, IrOpcode::BufferAtomicSMin32, 1u},
+    Case{0x45u, RdnaOpcode::SBufferAtomicUmin, IrOpcode::BufferAtomicUMin32, 1u},
+    Case{0x46u, RdnaOpcode::SBufferAtomicSmax, IrOpcode::BufferAtomicSMax32, 1u},
+    Case{0x47u, RdnaOpcode::SBufferAtomicUmax, IrOpcode::BufferAtomicUMax32, 1u},
+    Case{0x48u, RdnaOpcode::SBufferAtomicAnd, IrOpcode::BufferAtomicAnd32, 1u},
+    Case{0x49u, RdnaOpcode::SBufferAtomicOr, IrOpcode::BufferAtomicOr32, 1u},
+    Case{0x4au, RdnaOpcode::SBufferAtomicXor, IrOpcode::BufferAtomicXor32, 1u},
+    Case{0x60u, RdnaOpcode::SBufferAtomicSwapX2, IrOpcode::BufferAtomicSwap64, 2u},
+    Case{0x62u, RdnaOpcode::SBufferAtomicAddX2, IrOpcode::BufferAtomicIAdd64, 2u},
+    Case{0x63u, RdnaOpcode::SBufferAtomicSubX2, IrOpcode::BufferAtomicISub64, 2u},
+    Case{0x64u, RdnaOpcode::SBufferAtomicSminX2, IrOpcode::BufferAtomicSMin64, 2u},
+    Case{0x65u, RdnaOpcode::SBufferAtomicUminX2, IrOpcode::BufferAtomicUMin64, 2u},
+    Case{0x66u, RdnaOpcode::SBufferAtomicSmaxX2, IrOpcode::BufferAtomicSMax64, 2u},
+    Case{0x67u, RdnaOpcode::SBufferAtomicUmaxX2, IrOpcode::BufferAtomicUMax64, 2u},
+    Case{0x68u, RdnaOpcode::SBufferAtomicAndX2, IrOpcode::BufferAtomicAnd64, 2u},
+    Case{0x69u, RdnaOpcode::SBufferAtomicOrX2, IrOpcode::BufferAtomicOr64, 2u},
+    Case{0x6au, RdnaOpcode::SBufferAtomicXorX2, IrOpcode::BufferAtomicXor64, 2u},
 };
 
 void Require(bool value, std::source_location where = std::source_location::current()) {
@@ -41,7 +52,7 @@ void Check(const Case& test, bool returnOld) {
     Require(instruction.destination.kind == RdnaOperandKind::ScalarRegister && instruction.destination.reg == 1u);
     Require(instruction.source0.kind == RdnaOperandKind::ScalarRegister && instruction.source0.reg == 8u);
     Require(instruction.source1.kind == RdnaOperandKind::ScalarRegister && instruction.source1.reg == 0u);
-    Require(instruction.memoryOffset == 8u && instruction.dataDwordCount == 1u);
+    Require(instruction.memoryOffset == 8u && instruction.dataDwordCount == test.dataDwords);
 
     IrProgram program;
     auto& block = program.CreateBlock();
@@ -55,10 +66,10 @@ void Check(const Case& test, bool returnOld) {
         if (value->Opcode() != test.lowered) continue;
         ++atomics;
         const auto& memory = program.Resources().memoryInfo.at(value->Flags<MemoryFlags>().index);
-        Require(memory.kind == ResourceKind::Buffer && memory.resource == 2u && memory.offset == 8u);
+        Require(memory.kind == ResourceKind::Buffer && memory.resource == 2u && memory.offset == 8u && memory.dataDwords == test.dataDwords);
         Require(value->Argument(5u)->Opcode() == IrOpcode::LogicalAnd);
     }
-    Require(atomics == 1u && firstLanes == (returnOld ? 2u : 1u));
+    Require(atomics == 1u && firstLanes == (returnOld ? 1u + test.dataDwords : 1u));
 }
 
 }

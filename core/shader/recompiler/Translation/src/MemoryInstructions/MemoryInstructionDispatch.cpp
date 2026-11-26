@@ -78,6 +78,26 @@ bool TranslationContext::emitMemory(const RdnaInstruction& inst) {
         return sBufferAtomic(inst, IrOpcode::BufferAtomicOr32);
     case RdnaOpcode::SBufferAtomicXor:
         return sBufferAtomic(inst, IrOpcode::BufferAtomicXor32);
+    case RdnaOpcode::SBufferAtomicSwapX2:
+        return sBufferAtomic(inst, IrOpcode::BufferAtomicSwap64);
+    case RdnaOpcode::SBufferAtomicAddX2:
+        return sBufferAtomic(inst, IrOpcode::BufferAtomicIAdd64);
+    case RdnaOpcode::SBufferAtomicSubX2:
+        return sBufferAtomic(inst, IrOpcode::BufferAtomicISub64);
+    case RdnaOpcode::SBufferAtomicSminX2:
+        return sBufferAtomic(inst, IrOpcode::BufferAtomicSMin64);
+    case RdnaOpcode::SBufferAtomicUminX2:
+        return sBufferAtomic(inst, IrOpcode::BufferAtomicUMin64);
+    case RdnaOpcode::SBufferAtomicSmaxX2:
+        return sBufferAtomic(inst, IrOpcode::BufferAtomicSMax64);
+    case RdnaOpcode::SBufferAtomicUmaxX2:
+        return sBufferAtomic(inst, IrOpcode::BufferAtomicUMax64);
+    case RdnaOpcode::SBufferAtomicAndX2:
+        return sBufferAtomic(inst, IrOpcode::BufferAtomicAnd64);
+    case RdnaOpcode::SBufferAtomicOrX2:
+        return sBufferAtomic(inst, IrOpcode::BufferAtomicOr64);
+    case RdnaOpcode::SBufferAtomicXorX2:
+        return sBufferAtomic(inst, IrOpcode::BufferAtomicXor64);
     case RdnaOpcode::SScratchLoadDword:
     case RdnaOpcode::SScratchLoadDwordx2:
     case RdnaOpcode::SScratchLoadDwordx4:
