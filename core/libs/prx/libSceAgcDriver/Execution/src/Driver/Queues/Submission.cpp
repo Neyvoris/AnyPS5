@@ -242,8 +242,41 @@ bool Driver::copyLink(Submission& submission, const std::uint32_t* guest, std::s
         if (opcode == 0x3fu && count == 14) {
             const auto mode = guest[cursor + 1] & 3u;
             require(mode == 1u || mode == 2u, "invalid COND_INDIRECT_BUFFER mode");
-            require(((guest[cursor + 1] >> 8u) & 7u) == 0u, "a COND_INDIRECT_BUFFER with a comparison is not implemented");
             require(!Pm4::Predicated(header), "a predicated COND_INDIRECT_BUFFER is not implemented");
+            if (const auto function = (guest[cursor + 1] >> 8u) & 7u; function != 0u) {
+                require(function <= 6u, "invalid COND_INDIRECT_BUFFER compare function");
+                require(guarded.empty(), "a COND_INDIRECT_BUFFER with a comparison inside a conditional execution range is not implemented");
+                const auto branch = submission.commands.size();
+                submission.commands.insert(submission.commands.end(), {Pm4::CompareBranchHeader, guest[cursor + 1], guest[cursor + 2], guest[cursor + 3], guest[cursor + 4], guest[cursor + 5], guest[cursor + 6], guest[cursor + 7], 0u});
+                const auto copyBranch = [&](std::size_t low, std::size_t wordsIndex) {
+                    const auto* branchTarget = reinterpret_cast<const std::uint32_t*>(static_cast<std::uintptr_t>(guest[cursor + low] & ~3u) | (static_cast<std::uintptr_t>(guest[cursor + low + 1] & 0xffffu) << 32u));
+                    const std::size_t branchWords = guest[cursor + wordsIndex] & 0xfffffu;
+                    if (branchWords == 0) return;
+                    GuestMemory::CheckRange(branchTarget, branchWords * sizeof(std::uint32_t), alignof(std::uint32_t));
+                    const auto branchStart = submission.commands.size();
+                    const auto branchCopied = startSegmentCopy(branchTarget, branchWords);
+                    require(!copySegment(submission, branchTarget, branchWords, budget, depth + 1), "a REWIND inside a COND_INDIRECT_BUFFER buffer is not implemented");
+                    noteIndirectSegment(submission, branchStart, branchTarget, branchWords, branchCopied);
+                    for (auto inner = branchStart; inner < submission.commands.size(); inner += Pm4::FillerPacket(submission.commands[inner]) ? 1u : Pm4::PacketWords(submission.commands[inner])) {
+                        const auto innerHeader = submission.commands[inner];
+                        require(innerHeader != FlipPacketHeader && innerHeader != RenderingWaitPacketHeader, "flips and rendering waits in COND_INDIRECT_BUFFER buffers are not implemented");
+                    }
+                };
+                copyBranch(8, 10);
+                const bool elseBuffer = (guest[cursor + 1] & 3u) == 2u && (guest[cursor + 13] & 0xfffffu) != 0;
+                std::size_t jump = 0;
+                if (elseBuffer) {
+                    jump = submission.commands.size();
+                    submission.commands.insert(submission.commands.end(), {Pm4::JumpHeader, 0u});
+                }
+                const auto otherwise = submission.commands.size();
+                if (elseBuffer) copyBranch(11, 13);
+                const auto end = submission.commands.size();
+                submission.commands[branch + 8] = static_cast<std::uint32_t>(end - branch);
+                submission.conditionalEnds.emplace(branch, otherwise);
+                if (elseBuffer) submission.conditionalEnds.emplace(jump, end);
+                return false;
+            }
             const auto* target = reinterpret_cast<const std::uint32_t*>(static_cast<std::uintptr_t>(guest[cursor + 8] & ~3u) | (static_cast<std::uintptr_t>(guest[cursor + 9] & 0xffffu) << 32u));
             const std::size_t targetWords = guest[cursor + 10] & 0xfffffu;
             if (targetWords != 0) {
@@ -439,6 +472,7 @@ ReferencedProgramScan ReferencedPrograms(std::span<const std::uint32_t> commands
         const auto opcode = (header >> 8u) & 0xffu;
         const auto words = std::min<std::size_t>(Pm4::PacketWords(header), commands.size() - cursor);
         const bool conditional = (header & 1u) != 0 || cursor < guardedEnd;
+        if (opcode == 0x22u && words == Pm4::CompareBranchWords && header == Pm4::CompareBranchHeader) guardedEnd = std::max(guardedEnd, cursor + commands[cursor + 8]);
         if (opcode == 0x22u && words == 5) guardedEnd = std::max(guardedEnd, cursor + words + Pm4::ConditionalWords(commands.subspan(cursor, words)));
         if (Pm4::DrawOpcode(opcode) && !std::any_of(bound.begin(), bound.end() - 1, [](bool pair) { return pair; })) scan.complete = false;
         if ((opcode == 0x15u || opcode == 0x16u) && !bound.back()) scan.complete = false;

@@ -574,9 +574,17 @@ void Driver::execute(Submission& submission) {
         } else if (opcode == 0x22) {
             landPendingWaits(submission.queue);
             recordQueuedLabelsBeforeRead(submission.queue);
+            if (header == Pm4::JumpHeader) {
+                nextCursor = submission.conditionalEnds.at(cursor);
+            } else if (header == Pm4::CompareBranchHeader) {
+                const bool taken = Pm4::CompareBranchPasses(packet);
+                if (!taken) nextCursor = submission.conditionalEnds.at(cursor);
+                if (traceGpu) std::fprintf(stderr, "[gpu] %.1f queue 0x%x COND_INDIRECT_BUFFER at DWORD %zu: %s\n", TraceMs(), submission.queue, cursor, taken ? "first buffer" : "second buffer or end");
+            } else {
             const auto condition = Pm4::ReadCondition(packet);
             if (condition == 0) nextCursor = submission.conditionalEnds.at(cursor);
             if (traceGpu) std::fprintf(stderr, "[gpu] %.1f queue 0x%x COND_EXEC at DWORD %zu reads 0x%x at 0x%llx: %s %zu dwords\n", TraceMs(), submission.queue, cursor, condition, static_cast<unsigned long long>(packet[1] | (static_cast<std::uint64_t>(packet[2]) << 32u)), condition == 0 ? "skips" : "executes", submission.conditionalEnds.at(cursor) - cursor - count);
+            }
         } else if (opcode == 0x91) {
             landPendingWaits(submission.queue);
             recordQueuedLabelsBeforeRead(submission.queue);

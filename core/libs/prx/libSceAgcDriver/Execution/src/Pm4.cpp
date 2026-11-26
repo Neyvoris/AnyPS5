@@ -450,6 +450,18 @@ void Validate(std::span<const std::uint32_t> packet, std::uint32_t queue) {
             require((packet.back() & ~0xa06cu) == 0x1u, "indirect dispatch modifiers are not implemented");
             break;
         case 0x22:
+            if (packet.size() == CompareBranchWords) {
+                const auto function = (packet[1] >> 8u) & 7u;
+                const auto mode = packet[1] & 3u;
+                require((packet[1] & ~0x703u) == 0 && function >= 1u && function <= 6u && (mode == 1u || mode == 2u), "invalid COND_INDIRECT_BUFFER branch packet");
+                require((packet[2] & 7u) == 0 && packet[3] <= 0xffffu, "unaligned or out of range COND_INDIRECT_BUFFER compare address");
+                require(packet[8] >= CompareBranchWords, "invalid COND_INDIRECT_BUFFER branch length");
+                break;
+            }
+            if (packet.size() == JumpWords) {
+                require(packet[1] == 0, "invalid COND_INDIRECT_BUFFER jump packet");
+                break;
+            }
             size(5);
             require((packet[1] & 3u) == 0, "COND_EXEC reserved address bits are not implemented");
             require(packet[2] <= 0xffffu, "COND_EXEC address bits above 48 are not implemented");
@@ -738,6 +750,25 @@ std::uint32_t ReadCondition(std::span<const std::uint32_t> packet) {
     const GuestMemory::ReadSiteScope site(GuestMemory::ReadSite::Wait);
     GuestMemory::Read(address(packet[1], packet[2]), std::as_writable_bytes(std::span(&value, 1)), 4);
     return value;
+}
+
+bool CompareBranchPasses(std::span<const std::uint32_t> packet) {
+    require(packet.size() == CompareBranchWords && packet[0] == CompareBranchHeader, "expected COND_INDIRECT_BUFFER branch packet");
+    std::uint64_t value = 0;
+    const GuestMemory::ReadSiteScope site(GuestMemory::ReadSite::Wait);
+    GuestMemory::Read(address(packet[2], packet[3]), std::as_writable_bytes(std::span(&value, 1)), 8);
+    const auto mask = packet[4] | (static_cast<std::uint64_t>(packet[5]) << 32u);
+    const auto reference = packet[6] | (static_cast<std::uint64_t>(packet[7]) << 32u);
+    const auto masked = value & mask;
+    switch ((packet[1] >> 8u) & 7u) {
+        case 1: return masked < reference;
+        case 2: return masked <= reference;
+        case 3: return masked == reference;
+        case 4: return masked != reference;
+        case 5: return masked >= reference;
+        case 6: return masked > reference;
+        default: throw std::runtime_error("invalid COND_INDIRECT_BUFFER compare function");
+    }
 }
 
 std::optional<LabelWrite> DecodeLabelWrite(std::span<const std::uint32_t> packet) {

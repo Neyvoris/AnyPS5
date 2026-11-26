@@ -1723,7 +1723,46 @@ void testBranchSubmission() {
     submitWords(words);
     AgcDriverWaitIdle_nid_postfix();
     check(results[2] == 75, "an empty COND_INDIRECT_BUFFER skipped the next packet");
-    for (const auto& [mode, function, text] : {std::tuple{1u, 3u, "with a comparison"}, std::tuple{0u, 0u, "invalid COND_INDIRECT_BUFFER mode"}}) {
+    alignas(8) static std::uint64_t compared = 0;
+    const auto compareBranch = [](std::uint32_t mode, std::uint32_t function, std::uint64_t mask, std::uint64_t reference, const std::vector<std::uint32_t>* one, const std::vector<std::uint32_t>* other) {
+        auto packet = branch(mode, function, one, other);
+        const auto address = reinterpret_cast<std::uintptr_t>(&compared);
+        packet[2] = static_cast<std::uint32_t>(address);
+        packet[3] = static_cast<std::uint32_t>(address >> 32u);
+        packet[4] = static_cast<std::uint32_t>(mask);
+        packet[5] = static_cast<std::uint32_t>(mask >> 32u);
+        packet[6] = static_cast<std::uint32_t>(reference);
+        packet[7] = static_cast<std::uint32_t>(reference >> 32u);
+        return packet;
+    };
+    struct Case { std::uint32_t function; std::uint64_t value, mask, reference; bool passes; const char* text; };
+    for (const auto& item : {
+             Case{1, 4, ~0ull, 5, true, "less, true"}, Case{1, 5, ~0ull, 5, false, "less, equal"},
+             Case{2, 5, ~0ull, 5, true, "less-equal, equal"}, Case{2, 6, ~0ull, 5, false, "less-equal, greater"},
+             Case{3, 5, ~0ull, 5, true, "equal, equal"}, Case{3, 6, ~0ull, 5, false, "equal, different"},
+             Case{4, 6, ~0ull, 5, true, "not-equal, different"}, Case{4, 5, ~0ull, 5, false, "not-equal, equal"},
+             Case{5, 5, ~0ull, 5, true, "greater-equal, equal"}, Case{5, 4, ~0ull, 5, false, "greater-equal, less"},
+             Case{6, 6, ~0ull, 5, true, "greater, greater"}, Case{6, 5, ~0ull, 5, false, "greater, equal"},
+             Case{3, 0xffffffff00000005ull, 0xffull, 5, true, "mask hides the high bits"},
+             Case{3, 0x100000005ull, ~0ull, 5, false, "the compare reads all 64 bits"},
+         }) {
+        for (const auto mode : {1u, 2u}) {
+            results.fill(0);
+            compared = item.value;
+            words = joinPackets({compareBranch(mode, item.function, item.mask, item.reference, &first, mode == 2 ? &second : nullptr), writeWord(results[2], 78)});
+            submitWords(words);
+            AgcDriverWaitIdle_nid_postfix();
+            check(results[0] == (item.passes ? 71u : 0u), (std::string("COND_INDIRECT_BUFFER first buffer, ") + item.text).c_str());
+            check(results[1] == (mode == 2u && !item.passes ? 72u : 0u) && results[2] == 0, (std::string("COND_INDIRECT_BUFFER ran a packet it should not, ") + item.text).c_str());
+        }
+        results.fill(0);
+        compared = item.value;
+        words = joinPackets({compareBranch(2, item.function, item.mask, item.reference, &first, &second)});
+        submitWords(words);
+        AgcDriverWaitIdle_nid_postfix();
+        check(results[0] == (item.passes ? 71u : 0u) && results[1] == (item.passes ? 0u : 72u), (std::string("COND_INDIRECT_BUFFER else buffer, ") + item.text).c_str());
+    }
+    for (const auto& [mode, function, text] : {std::tuple{0u, 0u, "invalid COND_INDIRECT_BUFFER mode"}, std::tuple{1u, 7u, "invalid COND_INDIRECT_BUFFER compare function"}}) {
         results.fill(0);
         words = joinPackets({writeWord(results[3], 1), branch(mode, function, &first, nullptr)});
         expectFailure([&] { submitWords(words); }, text);

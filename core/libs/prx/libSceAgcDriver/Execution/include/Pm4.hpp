@@ -125,6 +125,11 @@ bool WaitCompares(std::uint32_t function, std::uint64_t reference, std::uint64_t
 std::size_t WaitAwaitedBytes(std::span<const std::uint32_t> packet);
 std::size_t ConditionalWords(std::span<const std::uint32_t> packet);
 std::uint32_t ReadCondition(std::span<const std::uint32_t> packet);
+inline constexpr std::size_t CompareBranchWords = 9;
+inline constexpr std::size_t JumpWords = 2;
+inline constexpr std::uint32_t CompareBranchHeader = 0xc0000000u | ((CompareBranchWords - 2u) << 16u) | (0x22u << 8u);
+inline constexpr std::uint32_t JumpHeader = 0xc0000000u | ((JumpWords - 2u) << 16u) | (0x22u << 8u);
+bool CompareBranchPasses(std::span<const std::uint32_t> packet);
 // A label write (RELEASE_MEM with a data select, WRITE_DATA to memory): the destination and the
 // bytes it stores, so the write can be recorded on the GPU behind the work it signals. Packets
 // without a memory destination decode to nothing. No allocation per label (tens of thousands per
