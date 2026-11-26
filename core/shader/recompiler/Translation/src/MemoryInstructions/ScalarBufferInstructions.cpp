@@ -107,9 +107,19 @@ bool TranslationContext::sBufferAtomic(const RdnaInstruction& inst, IrOpcode opc
     IrValue& leader = ir.LogicalAnd(exec, ir.IEqual(lane, first));
     const IrU32 offset(ir.Constant(0u));
     const IrU32 soffset = readU32(inst.source1);
+    IrValue* atomicArgs[2]{};
+    if (opcode == IrOpcode::BufferAtomicCmpSwap32) {
+        atomicArgs[0] = &readU32(inst.destination).Value();
+        atomicArgs[1] = &readU32(offsetOperand(inst.destination, 1u)).Value();
+    } else if (opcode == IrOpcode::BufferAtomicCmpSwap64) {
+        atomicArgs[0] = &readU64(inst.destination).Value();
+        atomicArgs[1] = &readU64(offsetOperand(inst.destination, 2u)).Value();
+    }
     IrValue& result = IrOpcodeType(opcode) == IrType::U64
-        ? ir.Emit(opcode, IrType::U64, {resource, &ir.Constant(0u), &offset.Value(), &soffset.Value(), &readU64(inst.destination).Value(), &leader}, addMemoryInfo(memory, inst.programCounter))
-        : ir.Emit(opcode, IrType::U32, {resource, &ir.Constant(0u), &offset.Value(), &soffset.Value(), &readU32(inst.destination).Value(), &leader}, addMemoryInfo(memory, inst.programCounter));
+        ? (atomicArgs[0] ? ir.Emit(opcode, IrType::U64, {resource, &ir.Constant(0u), &offset.Value(), &soffset.Value(), atomicArgs[0], atomicArgs[1], &leader}, addMemoryInfo(memory, inst.programCounter))
+                         : ir.Emit(opcode, IrType::U64, {resource, &ir.Constant(0u), &offset.Value(), &soffset.Value(), &readU64(inst.destination).Value(), &leader}, addMemoryInfo(memory, inst.programCounter)))
+        : (atomicArgs[0] ? ir.Emit(opcode, IrType::U32, {resource, &ir.Constant(0u), &offset.Value(), &soffset.Value(), atomicArgs[0], atomicArgs[1], &leader}, addMemoryInfo(memory, inst.programCounter))
+                         : ir.Emit(opcode, IrType::U32, {resource, &ir.Constant(0u), &offset.Value(), &soffset.Value(), &readU32(inst.destination).Value(), &leader}, addMemoryInfo(memory, inst.programCounter)));
     if (inst.glc && IrOpcodeType(opcode) == IrType::U64) {
         const auto words = extractU64(IrU64(result));
         const IrU32 low(ir.Emit(IrOpcode::ReadFirstLane, IrType::U32, {&words[0].Value(), &leader}));

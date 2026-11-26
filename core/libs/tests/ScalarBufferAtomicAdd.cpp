@@ -27,6 +27,7 @@ constexpr std::array Cases{
     Case{0x48u, RdnaOpcode::SBufferAtomicAnd, IrOpcode::BufferAtomicAnd32, 1u},
     Case{0x49u, RdnaOpcode::SBufferAtomicOr, IrOpcode::BufferAtomicOr32, 1u},
     Case{0x4au, RdnaOpcode::SBufferAtomicXor, IrOpcode::BufferAtomicXor32, 1u},
+    Case{0x41u, RdnaOpcode::SBufferAtomicCmpswap, IrOpcode::BufferAtomicCmpSwap32, 1u},
     Case{0x60u, RdnaOpcode::SBufferAtomicSwapX2, IrOpcode::BufferAtomicSwap64, 2u},
     Case{0x62u, RdnaOpcode::SBufferAtomicAddX2, IrOpcode::BufferAtomicIAdd64, 2u},
     Case{0x63u, RdnaOpcode::SBufferAtomicSubX2, IrOpcode::BufferAtomicISub64, 2u},
@@ -37,6 +38,7 @@ constexpr std::array Cases{
     Case{0x68u, RdnaOpcode::SBufferAtomicAndX2, IrOpcode::BufferAtomicAnd64, 2u},
     Case{0x69u, RdnaOpcode::SBufferAtomicOrX2, IrOpcode::BufferAtomicOr64, 2u},
     Case{0x6au, RdnaOpcode::SBufferAtomicXorX2, IrOpcode::BufferAtomicXor64, 2u},
+    Case{0x61u, RdnaOpcode::SBufferAtomicCmpswapX2, IrOpcode::BufferAtomicCmpSwap64, 2u},
 };
 
 void Require(bool value, std::source_location where = std::source_location::current()) {
@@ -67,7 +69,15 @@ void Check(const Case& test, bool returnOld) {
         ++atomics;
         const auto& memory = program.Resources().memoryInfo.at(value->Flags<MemoryFlags>().index);
         Require(memory.kind == ResourceKind::Buffer && memory.resource == 2u && memory.offset == 8u && memory.dataDwords == test.dataDwords);
-        Require(value->Argument(5u)->Opcode() == IrOpcode::LogicalAnd);
+        if (test.decoded == RdnaOpcode::SBufferAtomicCmpswap || test.decoded == RdnaOpcode::SBufferAtomicCmpswapX2) {
+            Require(value->ArgumentCount() == 7u);
+            Require(value->Argument(4u)->Type() == (test.dataDwords == 1u ? IrType::U32 : IrType::U64));
+            Require(value->Argument(5u)->Type() == (test.dataDwords == 1u ? IrType::U32 : IrType::U64));
+            Require(value->Argument(6u)->Opcode() == IrOpcode::LogicalAnd);
+        } else {
+            Require(value->ArgumentCount() == 6u);
+            Require(value->Argument(5u)->Opcode() == IrOpcode::LogicalAnd);
+        }
     }
     Require(atomics == 1u && firstLanes == (returnOld ? 1u + test.dataDwords : 1u));
 }

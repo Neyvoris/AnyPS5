@@ -37,6 +37,7 @@ constexpr std::uint32_t Umax(std::uint32_t old, std::uint32_t value) { return st
 constexpr std::uint32_t And(std::uint32_t old, std::uint32_t value) { return old & value; }
 constexpr std::uint32_t Or(std::uint32_t old, std::uint32_t value) { return old | value; }
 constexpr std::uint32_t Xor(std::uint32_t old, std::uint32_t value) { return old ^ value; }
+constexpr std::uint32_t CompareSwap(std::uint32_t, std::uint32_t value) { return value; }
 constexpr std::uint64_t Swap64(std::uint64_t, std::uint64_t value) { return value; }
 constexpr std::uint64_t Add64(std::uint64_t old, std::uint64_t value) { return old + value; }
 constexpr std::uint64_t Sub64(std::uint64_t old, std::uint64_t value) { return old - value; }
@@ -47,17 +48,20 @@ constexpr std::uint64_t Umax64(std::uint64_t old, std::uint64_t value) { return 
 constexpr std::uint64_t And64(std::uint64_t old, std::uint64_t value) { return old & value; }
 constexpr std::uint64_t Or64(std::uint64_t old, std::uint64_t value) { return old | value; }
 constexpr std::uint64_t Xor64(std::uint64_t old, std::uint64_t value) { return old ^ value; }
+constexpr std::uint64_t CompareSwap64(std::uint64_t, std::uint64_t value) { return value; }
 
 constexpr std::array Cases{
     Case{0x40u, "swap", Swap}, Case{0x42u, "add", Add}, Case{0x43u, "sub", Sub},
     Case{0x44u, "smin", Smin}, Case{0x45u, "umin", Umin}, Case{0x46u, "smax", Smax},
     Case{0x47u, "umax", Umax}, Case{0x48u, "and", And}, Case{0x49u, "or", Or}, Case{0x4au, "xor", Xor},
+    Case{0x41u, "cmpswap", CompareSwap},
 };
 
 constexpr std::array Cases64{
     Case64{0x60u, "swap_x2", Swap64}, Case64{0x62u, "add_x2", Add64}, Case64{0x63u, "sub_x2", Sub64},
     Case64{0x64u, "smin_x2", Smin64}, Case64{0x65u, "umin_x2", Umin64}, Case64{0x66u, "smax_x2", Smax64},
     Case64{0x67u, "umax_x2", Umax64}, Case64{0x68u, "and_x2", And64}, Case64{0x69u, "or_x2", Or64}, Case64{0x6au, "xor_x2", Xor64},
+    Case64{0x61u, "cmpswap_x2", CompareSwap64},
 };
 
 alignas(256) std::array<std::uint32_t, 6> Code{};
@@ -78,6 +82,7 @@ void Run(const Device& device, const Case& test, bool returnOld) {
     Output[2] = oldValue;
     std::vector<std::uint32_t> userData(12u, 0u);
     userData[1] = operand;
+    if (test.opcode == 0x41u) userData[2] = oldValue;
     const auto descriptor = BufferDescriptor(Output.data(), static_cast<std::uint32_t>(sizeof(Output)));
     std::copy(descriptor.begin(), descriptor.end(), userData.begin() + 8);
     const std::array<ShaderRecompiler::MemoryRegion, 1> memory{{{reinterpret_cast<std::uintptr_t>(Code.data()), std::as_bytes(std::span(Code))}}};
@@ -106,6 +111,10 @@ void Run64(const Device& device, const Case64& test, bool returnOld) {
     std::vector<std::uint32_t> userData(12u, 0u);
     userData[2] = static_cast<std::uint32_t>(operand);
     userData[3] = static_cast<std::uint32_t>(operand >> 32u);
+    if (test.opcode == 0x61u) {
+        userData[4] = static_cast<std::uint32_t>(oldValue);
+        userData[5] = static_cast<std::uint32_t>(oldValue >> 32u);
+    }
     const auto descriptor = BufferDescriptor(Output.data(), static_cast<std::uint32_t>(sizeof(Output)));
     std::copy(descriptor.begin(), descriptor.end(), userData.begin() + 8);
     const std::array<ShaderRecompiler::MemoryRegion, 1> memory{{{reinterpret_cast<std::uintptr_t>(Code.data()), std::as_bytes(std::span(Code))}}};
