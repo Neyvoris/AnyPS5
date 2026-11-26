@@ -45,6 +45,9 @@ constexpr std::size_t LabelOffset = 8196;
 constexpr std::size_t GateOffset = 8200;
 constexpr std::size_t ChildOffset = CommandsOffset + CommandWords * 4;
 constexpr std::size_t BranchOffset = ChildOffset + CommandWords * 4;
+constexpr std::size_t CompareOffset = 12288;
+constexpr std::size_t FirstBufferOffset = 16384;
+constexpr std::size_t SecondBufferOffset = 16640;
 constexpr std::size_t BlockBytes = 65536;
 constexpr std::uint32_t Filler = 0xffff1000u;
 
@@ -185,6 +188,29 @@ void NestedRewrite(const GuestBlock& block, std::uint32_t marker) {
     AgcDriver::GuestMemory::FlushGpuWrites(target, sizeof(std::uint32_t));
     const auto seen = Load(block, MarkerOffset);
     Require(seen == marker, "an indirect buffer called from a COND_INDIRECT_BUFFER a dispatch wrote ran as it was copied, not as the dispatch before it wrote it: the marker is " + std::to_string(seen) + ", expected " + std::to_string(marker));
+}
+
+void CompareBranchOnGpuValue(const GuestBlock& block, std::uint32_t gpuValue, std::uint32_t reference, std::uint32_t expected) {
+    Store(block, MarkerOffset, 0);
+    Store(block, CompareOffset, 0);
+    Store(block, CompareOffset + 4, 0);
+    const auto compare = block.At(CompareOffset);
+    const auto marker = block.At(MarkerOffset);
+    const auto first = block.At(FirstBufferOffset);
+    const auto second = block.At(SecondBufferOffset);
+    const auto writeFirst = Pm4(0x37, {0x500u, Low(marker), High(marker), 1});
+    const auto writeSecond = Pm4(0x37, {0x500u, Low(marker), High(marker), 2});
+    std::memcpy(block.Bytes(FirstBufferOffset), writeFirst.data(), writeFirst.size() * sizeof(std::uint32_t));
+    std::memcpy(block.Bytes(SecondBufferOffset), writeSecond.data(), writeSecond.size() * sizeof(std::uint32_t));
+    auto words = Dispatching(block, {gpuValue, 0u, 0u, 0u, 0u}, CompareOffset);
+    const auto branch = Pm4(0x3f, {2u | (3u << 8u), Low(compare), High(compare) & 0xffffu, 0xffffffffu, 0xffffffffu, reference, 0u, Low(first), High(first) & 0xffffu, static_cast<std::uint32_t>(writeFirst.size()), Low(second), High(second) & 0xffffu, static_cast<std::uint32_t>(writeSecond.size())});
+    words.insert(words.end(), branch.begin(), branch.end());
+    Packet dcb{words.data(), static_cast<std::uint32_t>(words.size()), 0, {}};
+    Require(sceAgcDriverSubmitDcb(&dcb) == 0, "GPU-written indirect buffer: the compare branch submission failed");
+    AgcDriverWaitIdle_nid_postfix();
+    AgcDriver::GuestMemory::FlushGpuWrites(marker, sizeof(std::uint32_t));
+    const auto seen = Load(block, MarkerOffset);
+    Require(seen == expected, "a COND_INDIRECT_BUFFER comparing a value a dispatch before it wrote chose the wrong buffer: the marker is " + std::to_string(seen) + ", expected " + std::to_string(expected) + " (the compare must read memory when the queue reaches the packet, not at submission)");
 }
 
 void InvalidRewrite(const GuestBlock& block) {
@@ -454,6 +480,8 @@ int main() {
         Run(block, 0x5eed0002u, false);
         HeldWaitAfterRewrite(block);
         NestedRewrite(block, 0x5eed0003u);
+        CompareBranchOnGpuValue(block, 0x1234u, 0x1234u, 1u);
+        CompareBranchOnGpuValue(block, 0x9999u, 0x1234u, 2u);
         InvalidRewrite(block);
         CpuRewriteAfterSubmit(block, true);
         CpuRewriteAfterSubmit(block, false);
