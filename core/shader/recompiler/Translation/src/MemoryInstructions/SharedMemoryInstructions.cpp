@@ -200,11 +200,8 @@ bool TranslationContext::dsWrite2(const RdnaInstruction& inst) {
 }
 
 bool TranslationContext::dsSrc2(const RdnaInstruction& inst, IrOpcode opcode) {
-    if (inst.gds) {
-        throw std::runtime_error("GDS src2 operations are not supported");
-    }
     const MemoryInfo memory = sharedMemoryInfoFromInstruction(inst);
-    const IrU32 address = readU32(inst.source0);
+    const IrU32 address = dsAddress(inst);
     MemoryInfo source = memory;
     source.offset = memory.secondaryOffset;
     source.secondaryOffset = 0u;
@@ -219,11 +216,11 @@ bool TranslationContext::dsSrc2(const RdnaInstruction& inst, IrOpcode opcode) {
 }
 
 bool TranslationContext::dsSrc2U64(const RdnaInstruction& inst, IrOpcode opcode) {
-    if (inst.gds) {
-        throw std::runtime_error("64-bit GDS src2 operations are not supported");
+    if (inst.gds && (opcode == IrOpcode::SharedAtomicFMin64 || opcode == IrOpcode::SharedAtomicFMax64)) {
+        throw std::runtime_error("64-bit floating-point GDS src2 atomics are not supported");
     }
     const MemoryInfo memory = sharedMemoryInfoFromInstruction(inst);
-    const IrU32 address = readU32(inst.source0);
+    const IrU32 address = dsAddress(inst);
     MemoryInfo source = memory;
     source.offset = memory.secondaryOffset;
     source.secondaryOffset = 0u;

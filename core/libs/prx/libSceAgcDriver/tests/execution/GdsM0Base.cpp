@@ -60,6 +60,20 @@ alignas(256) auto Add64Code = std::to_array<std::uint32_t>({
     0xbf810000,
 });
 
+alignas(256) auto Src2Code = std::to_array<std::uint32_t>({
+    0x7e000280,
+    0xbefc03ff, (Base << 16u) | Size,
+    0xda020001, 0x00000000,
+    0xbf810000,
+});
+
+alignas(256) auto Src2U64Code = std::to_array<std::uint32_t>({
+    0x7e000280,
+    0xbefc03ff, (Base << 16u) | Size,
+    0xdb020002, 0x00000000,
+    0xbf810000,
+});
+
 struct Workgroup {
     std::uint32_t threads;
     std::uint32_t waveSize;
@@ -160,6 +174,25 @@ void CheckRead(const Workgroup& workgroup) {
     }
 }
 
+void CheckSrc2(AgcDriver::QueueState& queue) {
+    const std::uint32_t updated = Starts[0] + Starts[1] * 32u;
+    auto expected = Starts;
+    expected[0] = updated;
+    const auto atBase = ReadWords(queue, Base);
+    Require(atBase == expected, "wave32 ds_add_src2_u32 gds with M0 base: GDS holds " + Words4(atBase) + ", expected " + Words4(expected));
+}
+
+void CheckSrc2U64(AgcDriver::QueueState& queue) {
+    const std::uint64_t target = Starts[0] | (static_cast<std::uint64_t>(Starts[1]) << 32u);
+    const std::uint64_t source = Starts[2] | (static_cast<std::uint64_t>(Starts[3]) << 32u);
+    const std::uint64_t updated = target + source * 32u;
+    auto expected = Starts;
+    expected[0] = static_cast<std::uint32_t>(updated);
+    expected[1] = static_cast<std::uint32_t>(updated >> 32u);
+    const auto atBase = ReadWords(queue, Base);
+    Require(atBase == expected, "wave32 ds_add_src2_u64 gds with M0 base: GDS holds " + Words4(atBase) + ", expected " + Words4(expected));
+}
+
 }
 
 int main() {
@@ -186,6 +219,12 @@ int main() {
             Run(*device, workgroup, Add64Code);
             CheckAdd64(queue, workgroup);
         }
+        SetWords(queue, Base, Starts);
+        Run(*device, Workgroups.front(), Src2Code);
+        CheckSrc2(queue);
+        SetWords(queue, Base, Starts);
+        Run(*device, Workgroups.front(), Src2U64Code);
+        CheckSrc2U64(queue);
         std::puts("gds m0 base tests passed");
         return 0;
     } catch (const std::exception& error) {
