@@ -304,12 +304,6 @@ int main() {
         ExpectModes(0xf0u, true, 1u, 1u);
         ExpectModes(0x9cu, true, 0x85u, 0x9du);
         ExpectModes(0x24u, false, 0x106u, 0x10eu);
-        try {
-            static_cast<void>(RecompilePixel(PixelCode, 64u, Fp16Input, OfflineTarget(true), 0u, {0xf1u, true, true, false}));
-            throw std::logic_error("16-bit interpolation accepted f32 directed rounding");
-        } catch (const std::runtime_error& error) {
-            Require(std::string(error.what()).find("needs f32 directed rounding") != std::string::npos, std::string("f32 directed rounding: ") + error.what());
-        }
         ExpectRejected(0xd75a001bu, 0x0c6a0200u, "interpolation modifiers", "v_interp_p2_f16 accepted an output modifier");
         ExpectRejected(0xd75a081bu, 0x046a0200u, "interpolation modifiers", "v_interp_p2_f16 accepted op_sel");
         ExpectRejected(0xd742001au, 0x20020000u, "interpolation modifiers", "v_interp_p1ll_f16 accepted a negated attribute");

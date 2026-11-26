@@ -228,7 +228,7 @@ std::uint32_t Reference(std::uint32_t delta, std::uint32_t coordinate, std::uint
     const bool flush16 = (mode & InterpolationFlush16) != 0u;
     const bool flushResult32 = (mode & InterpolationFlushResult32) != 0u;
     const bool flushResult16 = (mode & InterpolationFlushResult16) != 0u;
-    const std::uint32_t rounding = half ? (mode >> InterpolationRound16Shift) & 3u : 0u;
+    const std::uint32_t rounding = (mode >> (half ? InterpolationRound16Shift : InterpolationRound32Shift)) & 3u;
     const auto d = Flush(delta, flush16, 0x38800000u);
     const auto c = Flush(coordinate, flush32, 0x00800000u);
     const auto b = half ? Flush(base, flush32, 0x00800000u) : Flush(base, flush16, 0x38800000u);
@@ -268,6 +268,10 @@ std::uint32_t Reference(std::uint32_t delta, std::uint32_t coordinate, std::uint
                 const bool larger = (rounding == 1u && !negative) || (rounding == 2u && negative);
                 rounded = std::copysign(larger ? 65536.0 : 65504.0, rounded);
             }
+        } else if (rounding != 0u && std::fabs(rounded) > std::numeric_limits<float>::max()) {
+            const bool negative = std::signbit(rounded);
+            const bool toInfinity = (rounding == 1u && !negative) || (rounding == 2u && negative);
+            if (!toInfinity) rounded = std::copysign(static_cast<double>(std::numeric_limits<float>::max()), rounded);
         }
         result = std::bit_cast<std::uint32_t>(static_cast<float>(rounded));
     }
@@ -348,6 +352,44 @@ void RunRandom(AgcDriver::VulkanDevice& device, bool integer) {
         }
     }
     for (std::size_t index = RandomRows * RandomWords; index < Data.size(); ++index) Require(Data[index] == Sentinel, "random interpolation rows wrote beyond the rows");
+}
+
+void RunDirectedF32(AgcDriver::VulkanDevice& device, bool integer) {
+    auto table = Rows;
+    constexpr std::array<std::array<std::uint32_t, 3>, 4> cases{{
+        {{0x3f800000u, 0x33800000u, 0x3f800000u}}, // positive half-ULP tie at 1.0
+        {{0xbf800000u, 0x33800000u, 0xbf800000u}}, // negative half-ULP tie at -1.0
+        {{0x3f000000u, 0x00000001u, 0x00000000u}}, // half of the least f32 subnormal
+        {{0x7f7fffffu, 0x40000000u, 0x00000000u}}, // finite-input overflow
+    }};
+    for (std::uint32_t row = 0; row < cases.size(); ++row) {
+        for (const auto op : {0u, 2u}) {
+            for (std::uint32_t component = 0; component < 3u; ++component) table[row].input[op * 3u + component] = cases[row][component];
+        }
+    }
+    constexpr auto denorm = DenormalFlags(1u, 3u, 3u);
+    const std::array<std::uint32_t, 4> modes{
+        denorm,
+        denorm | (1u << InterpolationRound32Shift),
+        denorm | (2u << InterpolationRound32Shift),
+        denorm | (3u << InterpolationRound32Shift),
+    };
+    Data.fill(Sentinel);
+    for (std::uint32_t row = 0; row < table.size(); ++row) std::copy(table[row].input.begin(), table[row].input.end(), Data.begin() + row * Words);
+    device.Dispatch(Compile(modes, integer, true, Words), 1u, 1u, 1u);
+    device.WaitIdle();
+    for (std::uint32_t row = 0; row < table.size(); ++row) {
+        for (std::uint32_t slot = 0; slot < modes.size(); ++slot) {
+            for (std::uint32_t op = 0; op < 3u; ++op) {
+                const auto* input = &table[row].input[op * 3u];
+                const auto expected = Reference(input[0], input[1], input[2], op == 1u, modes[slot]);
+                const auto actual = Data[row * Words + 9u + slot * 3u + op];
+                char message[240];
+                std::snprintf(message, sizeof(message), "%s (%s), directed mode 0x%x, row %u: got 0x%08x, expected 0x%08x", OpNames[op], integer ? "integer" : "Float64", modes[slot], row, actual, expected);
+                Require(actual == expected, message);
+            }
+        }
+    }
 }
 
 constexpr std::uint32_t ChainWords = 8;
@@ -529,6 +571,8 @@ int main(int argc, char** argv) {
         }
         RunRandom(*device, true);
         if (float64) RunRandom(*device, false);
+        RunDirectedF32(*device, true);
+        if (float64) RunDirectedF32(*device, false);
         RunChains(*device, true);
         if (float64) RunChains(*device, false);
         std::puts(float64 ? "interpolation modes passed: 32 hardware rows in 8 float modes, 32 in 8 split denormal and f16 rounding modes, 2048 random rows against the reference in 32 float modes, 3 ops, 8192 chains of 64 f32 and f16 interpolations, integer and Float64 paths"

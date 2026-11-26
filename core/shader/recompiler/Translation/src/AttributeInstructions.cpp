@@ -107,11 +107,9 @@ std::uint32_t TranslationContext::interpolationModeF16(const RdnaInstruction& in
     const auto denorm32 = (mode >> 4u) & 3u;
     const auto denorm16 = (mode >> 6u) & 3u;
     const bool half = inst.op == RdnaOpcode::VInterpP2F16;
-    if (!half && (mode & 3u) != 0u) {
-        throw std::runtime_error("16-bit interpolation with an f32 result at pc " + std::to_string(inst.programCounter) + " in FLOAT_MODE " + std::to_string(mode) + " needs f32 directed rounding, which is not implemented");
-    }
     const auto flushes = ((denorm32 & 1u) == 0u ? InterpolationFlush32 : 0u) | ((denorm32 & 2u) == 0u ? InterpolationFlushResult32 : 0u) | ((denorm16 & 1u) == 0u ? InterpolationFlush16 : 0u) | ((denorm16 & 2u) == 0u ? InterpolationFlushResult16 : 0u);
-    return (floatMode->ieeeMode ? InterpolationQuiet : 0u) | flushes | (half ? ((mode >> 2u) & 3u) << InterpolationRound16Shift : 0u);
+    const auto rounding = half ? ((mode >> 2u) & 3u) << InterpolationRound16Shift : (mode & 3u) << InterpolationRound32Shift;
+    return (floatMode->ieeeMode ? InterpolationQuiet : 0u) | flushes | rounding;
 }
 
 void TranslationContext::vInterpP1F16(const RdnaInstruction& inst) {
