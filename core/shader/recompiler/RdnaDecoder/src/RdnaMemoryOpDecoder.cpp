@@ -81,6 +81,8 @@ constexpr MemoryOpcodeInfo smemOpcodes[] = {
     {0x49u, RdnaOpcode::SBufferAtomicOr, 1, 32, false, false, false},
     {0x4au, RdnaOpcode::SBufferAtomicXor, 1, 32, false, false, false},
     {0x41u, RdnaOpcode::SBufferAtomicCmpswap, 1, 32, false, false, false},
+    {0x4bu, RdnaOpcode::SBufferAtomicInc, 1, 32, false, false, false},
+    {0x4cu, RdnaOpcode::SBufferAtomicDec, 1, 32, false, false, false},
     {0x60u, RdnaOpcode::SBufferAtomicSwapX2, 2, 32, false, false, false},
     {0x62u, RdnaOpcode::SBufferAtomicAddX2, 2, 32, false, false, false},
     {0x63u, RdnaOpcode::SBufferAtomicSubX2, 2, 32, false, false, false},
@@ -92,6 +94,8 @@ constexpr MemoryOpcodeInfo smemOpcodes[] = {
     {0x69u, RdnaOpcode::SBufferAtomicOrX2, 2, 32, false, false, false},
     {0x6au, RdnaOpcode::SBufferAtomicXorX2, 2, 32, false, false, false},
     {0x61u, RdnaOpcode::SBufferAtomicCmpswapX2, 2, 32, false, false, false},
+    {0x6bu, RdnaOpcode::SBufferAtomicIncX2, 2, 32, false, false, false},
+    {0x6cu, RdnaOpcode::SBufferAtomicDecX2, 2, 32, false, false, false},
 };
 
 constexpr MemoryOpcodeInfo mubufOpcodes[] = {

@@ -38,6 +38,8 @@ constexpr std::uint32_t And(std::uint32_t old, std::uint32_t value) { return old
 constexpr std::uint32_t Or(std::uint32_t old, std::uint32_t value) { return old | value; }
 constexpr std::uint32_t Xor(std::uint32_t old, std::uint32_t value) { return old ^ value; }
 constexpr std::uint32_t CompareSwap(std::uint32_t, std::uint32_t value) { return value; }
+constexpr std::uint32_t Inc(std::uint32_t old, std::uint32_t limit) { return old >= limit ? 0u : old + 1u; }
+constexpr std::uint32_t Dec(std::uint32_t old, std::uint32_t limit) { return old == 0u || old > limit ? limit : old - 1u; }
 constexpr std::uint64_t Swap64(std::uint64_t, std::uint64_t value) { return value; }
 constexpr std::uint64_t Add64(std::uint64_t old, std::uint64_t value) { return old + value; }
 constexpr std::uint64_t Sub64(std::uint64_t old, std::uint64_t value) { return old - value; }
@@ -49,19 +51,21 @@ constexpr std::uint64_t And64(std::uint64_t old, std::uint64_t value) { return o
 constexpr std::uint64_t Or64(std::uint64_t old, std::uint64_t value) { return old | value; }
 constexpr std::uint64_t Xor64(std::uint64_t old, std::uint64_t value) { return old ^ value; }
 constexpr std::uint64_t CompareSwap64(std::uint64_t, std::uint64_t value) { return value; }
+constexpr std::uint64_t Inc64(std::uint64_t old, std::uint64_t limit) { return old >= limit ? 0ull : old + 1ull; }
+constexpr std::uint64_t Dec64(std::uint64_t old, std::uint64_t limit) { return old == 0ull || old > limit ? limit : old - 1ull; }
 
 constexpr std::array Cases{
     Case{0x40u, "swap", Swap}, Case{0x42u, "add", Add}, Case{0x43u, "sub", Sub},
     Case{0x44u, "smin", Smin}, Case{0x45u, "umin", Umin}, Case{0x46u, "smax", Smax},
     Case{0x47u, "umax", Umax}, Case{0x48u, "and", And}, Case{0x49u, "or", Or}, Case{0x4au, "xor", Xor},
-    Case{0x41u, "cmpswap", CompareSwap},
+    Case{0x41u, "cmpswap", CompareSwap}, Case{0x4bu, "inc", Inc}, Case{0x4cu, "dec", Dec},
 };
 
 constexpr std::array Cases64{
     Case64{0x60u, "swap_x2", Swap64}, Case64{0x62u, "add_x2", Add64}, Case64{0x63u, "sub_x2", Sub64},
     Case64{0x64u, "smin_x2", Smin64}, Case64{0x65u, "umin_x2", Umin64}, Case64{0x66u, "smax_x2", Smax64},
     Case64{0x67u, "umax_x2", Umax64}, Case64{0x68u, "and_x2", And64}, Case64{0x69u, "or_x2", Or64}, Case64{0x6au, "xor_x2", Xor64},
-    Case64{0x61u, "cmpswap_x2", CompareSwap64},
+    Case64{0x61u, "cmpswap_x2", CompareSwap64}, Case64{0x6bu, "inc_x2", Inc64}, Case64{0x6cu, "dec_x2", Dec64},
 };
 
 alignas(256) std::array<std::uint32_t, 6> Code{};

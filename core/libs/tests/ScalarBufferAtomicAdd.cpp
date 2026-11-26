@@ -39,6 +39,10 @@ constexpr std::array Cases{
     Case{0x69u, RdnaOpcode::SBufferAtomicOrX2, IrOpcode::BufferAtomicOr64, 2u},
     Case{0x6au, RdnaOpcode::SBufferAtomicXorX2, IrOpcode::BufferAtomicXor64, 2u},
     Case{0x61u, RdnaOpcode::SBufferAtomicCmpswapX2, IrOpcode::BufferAtomicCmpSwap64, 2u},
+    Case{0x4bu, RdnaOpcode::SBufferAtomicInc, IrOpcode::BufferAtomicInc32, 1u},
+    Case{0x4cu, RdnaOpcode::SBufferAtomicDec, IrOpcode::BufferAtomicDec32, 1u},
+    Case{0x6bu, RdnaOpcode::SBufferAtomicIncX2, IrOpcode::BufferAtomicInc64, 2u},
+    Case{0x6cu, RdnaOpcode::SBufferAtomicDecX2, IrOpcode::BufferAtomicDec64, 2u},
 };
 
 void Require(bool value, std::source_location where = std::source_location::current()) {
