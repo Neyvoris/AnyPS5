@@ -51,6 +51,45 @@ bool TranslationContext::sLoad(const RdnaInstruction& inst, bool raw) {
     return true;
 }
 
+bool TranslationContext::sBufferStore(const RdnaInstruction& inst) {
+    if (inst.source0.kind != RdnaOperandKind::ScalarRegister) {
+        throw std::runtime_error("scalar buffer store descriptor must be a scalar register");
+    }
+    MemoryInfo memory;
+    memory.kind = ResourceKind::Buffer;
+    memory.resource = inst.source0.reg / 4u;
+    memory.offset = inst.memoryOffset;
+    memory.dataDwords = inst.dataDwordCount;
+    memory.componentCount = inst.dataDwordCount;
+    memory.coherent = inst.glc;
+    IrValue* resource = getBufferResource(memory);
+    IrValue& lane = ir.Emit(IrOpcode::LaneId, IrType::U32, {});
+    IrValue& exec = ir.GetExec();
+    IrValue& first = ir.Emit(IrOpcode::ReadFirstLane, IrType::U32, {&lane, &exec});
+    IrValue& leader = ir.LogicalAnd(exec, ir.IEqual(lane, first));
+    const IrU32 offset(ir.Constant(0u));
+    const IrU32 soffset = readU32(inst.source1);
+    std::array<IrValue*, 4> values{};
+    for (std::uint32_t component = 0u; component < inst.dataDwordCount; ++component) {
+        values[component] = &readU32(offsetOperand(inst.destination, component)).Value();
+    }
+    IrValue* value = values[0];
+    IrOpcode opcode = IrOpcode::StoreBufferU32;
+    if (inst.dataDwordCount == 2u) {
+        opcode = IrOpcode::StoreBufferU32x2;
+        value = &ir.Emit(IrOpcode::CompositeConstructU32x2, IrType::U32x2, {values[0], values[1]});
+    } else if (inst.dataDwordCount == 4u) {
+        opcode = IrOpcode::StoreBufferU32x4;
+        value = &ir.Emit(IrOpcode::CompositeConstructU32x4, IrType::U32x4, {values[0], values[1], values[2], values[3]});
+    } else if (inst.dataDwordCount != 1u) {
+        return false;
+    }
+    (void)ir.Emit(opcode, IrType::Void,
+                  {resource, &ir.Constant(0u), &offset.Value(), &soffset.Value(), value, &leader},
+                  addMemoryInfo(memory, inst.programCounter));
+    return true;
+}
+
 bool TranslationContext::sScratchLoad(const RdnaInstruction& /*inst*/) {
     throw std::runtime_error("s_scratch_load not yet implemented: wave-uniform or swizzled scratch layout required");
 }

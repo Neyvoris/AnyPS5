@@ -1,0 +1,11 @@
+if(BUILD_TESTING)
+    add_test_executable(scalar_buffer_store_tests ${LIBS_INCLUDE_DIR}/tests/ScalarBufferStore.cpp)
+    target_link_libraries(scalar_buffer_store_tests PRIVATE shader_recompiler_agc_driver libc)
+    configure_windows_unwind(scalar_buffer_store_tests)
+    add_test(NAME scalar_buffer_store COMMAND scalar_buffer_store_tests)
+    set_tests_properties(scalar_buffer_store PROPERTIES ENVIRONMENT "ANYPS5_NO_SHADER_CACHE=1")
+    if(WIN32)
+        set_tests_properties(scalar_buffer_store PROPERTIES ENVIRONMENT_MODIFICATION
+            "PATH=path_list_prepend:$<TARGET_FILE_DIR:libc>")
+    endif()
+endif()
