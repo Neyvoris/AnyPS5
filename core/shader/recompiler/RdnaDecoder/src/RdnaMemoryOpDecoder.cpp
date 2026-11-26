@@ -71,6 +71,15 @@ constexpr MemoryOpcodeInfo smemOpcodes[] = {
     {0x19u, RdnaOpcode::SBufferStoreDwordx2, 2, 32, false, false, false},
     {0x1au, RdnaOpcode::SBufferStoreDwordx4, 4, 32, false, false, false},
     {0x42u, RdnaOpcode::SBufferAtomicAdd, 1, 32, false, false, false},
+    {0x40u, RdnaOpcode::SBufferAtomicSwap, 1, 32, false, false, false},
+    {0x43u, RdnaOpcode::SBufferAtomicSub, 1, 32, false, false, false},
+    {0x44u, RdnaOpcode::SBufferAtomicSmin, 1, 32, true, false, false},
+    {0x45u, RdnaOpcode::SBufferAtomicUmin, 1, 32, false, false, false},
+    {0x46u, RdnaOpcode::SBufferAtomicSmax, 1, 32, true, false, false},
+    {0x47u, RdnaOpcode::SBufferAtomicUmax, 1, 32, false, false, false},
+    {0x48u, RdnaOpcode::SBufferAtomicAnd, 1, 32, false, false, false},
+    {0x49u, RdnaOpcode::SBufferAtomicOr, 1, 32, false, false, false},
+    {0x4au, RdnaOpcode::SBufferAtomicXor, 1, 32, false, false, false},
 };
 
 constexpr MemoryOpcodeInfo mubufOpcodes[] = {
@@ -830,7 +839,7 @@ RdnaInstruction DecodeRdnaSmem(std::uint32_t programCounter, std::span<const std
         std::snprintf(reason, sizeof(reason), "SMEM base register range overflow (sbase s%u at pc 0x%x, words %08x %08x)", sbase * 2u, programCounter, word0, word1);
         throw std::runtime_error(reason);
     } else {
-        const bool descriptor = (opcode >= 0x08u && opcode <= 0x0cu) || (opcode >= 0x18u && opcode <= 0x1au) || opcode == 0x42u;
+        const bool descriptor = (opcode >= 0x08u && opcode <= 0x0cu) || (opcode >= 0x18u && opcode <= 0x1au) || (opcode >= 0x40u && opcode <= 0x4au);
         instruction.source0 = scalarDescriptorBase(sbase * 2u, descriptor ? 4u : 2u, "SMEM base register range overflow");
     }
     instruction.source1 = scalarSource(soffsetCode);

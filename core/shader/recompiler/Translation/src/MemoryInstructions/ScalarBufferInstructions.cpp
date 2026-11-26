@@ -90,7 +90,7 @@ bool TranslationContext::sBufferStore(const RdnaInstruction& inst) {
     return true;
 }
 
-bool TranslationContext::sBufferAtomicAdd(const RdnaInstruction& inst) {
+bool TranslationContext::sBufferAtomic(const RdnaInstruction& inst, IrOpcode opcode) {
     if (inst.source0.kind != RdnaOperandKind::ScalarRegister) {
         throw std::runtime_error("scalar buffer atomic descriptor must be a scalar register");
     }
@@ -108,7 +108,7 @@ bool TranslationContext::sBufferAtomicAdd(const RdnaInstruction& inst) {
     const IrU32 data = readU32(inst.destination);
     const IrU32 offset(ir.Constant(0u));
     const IrU32 soffset = readU32(inst.source1);
-    IrValue& result = ir.Emit(IrOpcode::BufferAtomicIAdd32, IrType::U32,
+    IrValue& result = ir.Emit(opcode, IrOpcodeType(opcode),
                               {resource, &ir.Constant(0u), &offset.Value(), &soffset.Value(), &data.Value(), &leader},
                               addMemoryInfo(memory, inst.programCounter));
     if (inst.glc) {
