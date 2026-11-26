@@ -114,6 +114,10 @@ bool TranslationContext::emitMemory(const RdnaInstruction& inst) {
         return sAtomicAddress(inst, IrOpcode::AddressAtomicIAdd32);
     case RdnaOpcode::SAtomicAddX2:
         return sAtomicAddress(inst, IrOpcode::AddressAtomicIAdd64);
+    case RdnaOpcode::SStoreDword:
+    case RdnaOpcode::SStoreDwordX2:
+    case RdnaOpcode::SStoreDwordX4:
+        return sAddressStore(inst);
     case RdnaOpcode::SScratchLoadDword:
     case RdnaOpcode::SScratchLoadDwordx2:
     case RdnaOpcode::SScratchLoadDwordx4:

@@ -173,6 +173,33 @@ void RunAddressAdd(const Device& device, std::uint32_t opcode, bool wide, bool r
     if (wide) Require(Output[5] == static_cast<std::uint32_t>(expectedReturn >> 32u), "S_ATOMIC_ADD_X2 return high word mismatch");
 }
 
+template <typename Device>
+void RunAddressStore(const Device& device, std::uint32_t opcode, std::uint32_t dwords) {
+    Code = {0xf4000000u | (opcode << 18u) | (1u << 6u) | 6u, 0u,
+            0xf4000000u | (0x18u << 18u) | (5u << 6u) | 4u, 28u, 0xbf810000u, 0u};
+    Output.fill(0xdeadbeefu);
+    std::vector<std::uint32_t> userData(16u, 0u);
+    constexpr std::array values{0x12345678u, 0x9abcdef0u, 0x0badc0deu, 0xfedcba98u};
+    for (std::uint32_t index = 0u; index < dwords; ++index) userData[1u + index] = values[index];
+    userData[5] = 0xfaceb00cu;
+    const auto descriptor = BufferDescriptor(Output.data(), static_cast<std::uint32_t>(sizeof(Output)));
+    std::copy(descriptor.begin(), descriptor.end(), userData.begin() + 8);
+    const auto address = reinterpret_cast<std::uintptr_t>(&Output[2]);
+    userData[12] = static_cast<std::uint32_t>(address);
+    userData[13] = static_cast<std::uint32_t>(address >> 32u);
+    const std::array<ShaderRecompiler::MemoryRegion, 1> memory{{{reinterpret_cast<std::uintptr_t>(Code.data()), std::as_bytes(std::span(Code))}}};
+    const ShaderRecompiler::ShaderComputeStageInfo compute{{32u, 1u, 1u}, 0u, {false, false, false}, false, 1u};
+    ShaderRecompiler::RecompileRequest request{{ShaderStage::Compute, reinterpret_cast<std::uintptr_t>(Code.data()), Code, 0u, {}}, {32u, 0u, userData, compute, std::nullopt, std::nullopt, memory}, device->Target(), {0u, 0u, 0u, 128u}};
+    request.useCache = false;
+    const auto result = ShaderRecompiler::Recompile(request);
+    device->Dispatch(result, 1u, 1u, 1u, {}, reinterpret_cast<std::uintptr_t>(Code.data()));
+    device->WaitIdle();
+    for (std::uint32_t index = 0u; index < Output.size(); ++index) {
+        const std::uint32_t expected = index >= 2u && index < 2u + dwords ? values[index - 2u] : index == 7u ? 0xfaceb00cu : 0xdeadbeefu;
+        Require(Output[index] == expected, "S_STORE scalar address DWORD width check failed at word " + std::to_string(index));
+    }
+}
+
 }
 
 int main() {
@@ -191,6 +218,9 @@ int main() {
             RunAddressAdd(device, 0x82u, false, returnOld);
             RunAddressAdd(device, 0xa2u, true, returnOld);
         }
+        RunAddressStore(device, 0x10u, 1u);
+        RunAddressStore(device, 0x11u, 2u);
+        RunAddressStore(device, 0x12u, 4u);
         std::puts("scalar buffer atomic tests passed");
         return 0;
     } catch (const std::exception& error) {

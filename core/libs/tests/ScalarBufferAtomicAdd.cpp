@@ -114,6 +114,27 @@ void CheckAddressAdd(std::uint32_t opcode, RdnaOpcode decoded, IrOpcode lowered,
     Require(atomics == 1u && firstLanes == (returnOld ? 1u + dataDwords : 1u));
 }
 
+void CheckAddressStore(std::uint32_t opcode, RdnaOpcode decoded, IrOpcode lowered, std::uint32_t dataDwords) {
+    const std::array code{0xf4000000u | (opcode << 18u) | (1u << 6u) | 6u, 8u};
+    const auto instruction = DecodeRdnaSmem(0u, code, 0u);
+    Require(instruction.op == decoded && instruction.dataDwordCount == dataDwords);
+    Require(instruction.destination.reg == 1u && instruction.source0.reg == 12u && instruction.memoryOffset == 8u);
+    IrProgram program;
+    auto& block = program.CreateBlock();
+    program.SetEntryBlock(block);
+    TranslationContext context(program, block, 256u);
+    context.TranslateInstruction(instruction);
+    std::uint32_t stores = 0u;
+    for (const auto* value : block.Instructions()) {
+        if (value->Opcode() != lowered) continue;
+        ++stores;
+        const auto& memory = program.Resources().memoryInfo.at(value->Flags<MemoryFlags>().index);
+        Require(memory.kind == ResourceKind::Global && memory.offset == 8u && memory.dataDwords == dataDwords);
+        Require(value->ArgumentCount() == 5u && value->Argument(4u)->Opcode() == IrOpcode::LogicalAnd);
+    }
+    Require(stores == 1u);
+}
+
 }
 
 int main() {
@@ -125,4 +146,7 @@ int main() {
     CheckAddressAdd(0x82u, RdnaOpcode::SAtomicAdd, IrOpcode::AddressAtomicIAdd32, 1u, true);
     CheckAddressAdd(0xa2u, RdnaOpcode::SAtomicAddX2, IrOpcode::AddressAtomicIAdd64, 2u, false);
     CheckAddressAdd(0xa2u, RdnaOpcode::SAtomicAddX2, IrOpcode::AddressAtomicIAdd64, 2u, true);
+    CheckAddressStore(0x10u, RdnaOpcode::SStoreDword, IrOpcode::StoreAddressU32, 1u);
+    CheckAddressStore(0x11u, RdnaOpcode::SStoreDwordX2, IrOpcode::StoreAddressU32x2, 2u);
+    CheckAddressStore(0x12u, RdnaOpcode::SStoreDwordX4, IrOpcode::StoreAddressU32x4, 4u);
 }
