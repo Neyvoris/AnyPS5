@@ -218,6 +218,30 @@ bool TranslationContext::dsSrc2(const RdnaInstruction& inst, IrOpcode opcode) {
     return true;
 }
 
+bool TranslationContext::dsSrc2U64(const RdnaInstruction& inst, IrOpcode opcode) {
+    if (inst.gds) {
+        throw std::runtime_error("64-bit GDS src2 operations are not supported");
+    }
+    const MemoryInfo memory = sharedMemoryInfoFromInstruction(inst);
+    const IrU32 address = readU32(inst.source0);
+    MemoryInfo source = memory;
+    source.offset = memory.secondaryOffset;
+    source.secondaryOffset = 0u;
+    IrValue* pair = loadSharedU32(2u, address, source, inst.programCounter);
+    IrU64 value(ir.ConstructU64(ir.CompositeExtract(*pair, 0u), ir.CompositeExtract(*pair, 1u)));
+    MemoryInfo target = memory;
+    target.secondaryOffset = 0u;
+    target.flushDenormals = floatAtomicFlush(opcode);
+    if (opcode == IrOpcode::WriteSharedU32x2) {
+        const std::array<IrValue*, 4> words{&ir.CompositeExtract(*pair, 0u), &ir.CompositeExtract(*pair, 1u), nullptr, nullptr};
+        writeSharedU32(2u, address, words, target, inst.programCounter);
+        return true;
+    }
+    IrValue& active = ir.GetExec();
+    (void)ir.Emit(opcode, IrOpcodeType(opcode), {&address.Value(), &value.Value(), &active}, addMemoryInfo(target, inst.programCounter));
+    return true;
+}
+
 bool TranslationContext::dsAtomic2(const RdnaInstruction& inst, IrOpcode opcode, bool returnsValue) {
     MemoryInfo memory = sharedMemoryInfoFromInstruction(inst);
     memory.flushDenormals = floatAtomicFlush(opcode);

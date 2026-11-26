@@ -1,0 +1,10 @@
+if(BUILD_TESTING)
+    add_test_executable(ds_src2_u64_tests ${LIBS_INCLUDE_DIR}/tests/DsSrc2U64.cpp)
+    target_link_libraries(ds_src2_u64_tests PRIVATE shader_recompiler_agc_driver libc)
+    configure_windows_unwind(ds_src2_u64_tests)
+    add_test(NAME ds_src2_u64 COMMAND ds_src2_u64_tests)
+    if(WIN32)
+        set_tests_properties(ds_src2_u64 PROPERTIES ENVIRONMENT_MODIFICATION
+            "PATH=path_list_prepend:$<TARGET_FILE_DIR:libc>")
+    endif()
+endif()

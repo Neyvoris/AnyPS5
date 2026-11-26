@@ -20,8 +20,9 @@ using ShaderRecompiler::ShaderStage;
 constexpr std::uint32_t Threads = 32;
 constexpr std::uint32_t Inputs = 4;
 constexpr std::uint32_t Results = 16;
+constexpr std::uint32_t ExtendedResults = 32;
 alignas(256) std::array<std::uint32_t, Threads * Inputs> Input{};
-alignas(256) std::array<std::uint32_t, Threads * Results> Output{};
+alignas(256) std::array<std::uint32_t, Threads * ExtendedResults> Output{};
 
 alignas(256) constexpr std::array<std::uint32_t, 171> Code{
     0x34020084, 0xe0381000, 0x80000201, 0x340c0082, 0xbf8c3f70, 0x4a0e0cff, 0x00001000, 0x4a100c80,
@@ -171,6 +172,107 @@ void CheckAddressOffsetRejected(AgcDriver::VulkanDevice& device) {
     Require(false, "lds src2: an offset taken from the address was accepted");
 }
 
+struct U64Case {
+    std::uint32_t encoding;
+    const char* name;
+    std::uint64_t (*expected)(std::uint64_t, std::uint64_t);
+    bool floating;
+};
+
+std::uint64_t Add64(std::uint64_t a, std::uint64_t b) { return a + b; }
+std::uint64_t Sub64(std::uint64_t a, std::uint64_t b) { return a - b; }
+std::uint64_t Rsub64(std::uint64_t a, std::uint64_t b) { return b - a; }
+std::uint64_t Inc64(std::uint64_t a, std::uint64_t b) { return a >= b ? 0u : a + 1u; }
+std::uint64_t Dec64(std::uint64_t a, std::uint64_t b) { return a == 0u || a > b ? b : a - 1u; }
+std::uint64_t MinI64(std::uint64_t a, std::uint64_t b) { return std::bit_cast<std::uint64_t>(std::min(std::bit_cast<std::int64_t>(a), std::bit_cast<std::int64_t>(b))); }
+std::uint64_t MaxI64(std::uint64_t a, std::uint64_t b) { return std::bit_cast<std::uint64_t>(std::max(std::bit_cast<std::int64_t>(a), std::bit_cast<std::int64_t>(b))); }
+std::uint64_t MinU64(std::uint64_t a, std::uint64_t b) { return std::min(a, b); }
+std::uint64_t MaxU64(std::uint64_t a, std::uint64_t b) { return std::max(a, b); }
+std::uint64_t And64(std::uint64_t a, std::uint64_t b) { return a & b; }
+std::uint64_t Or64(std::uint64_t a, std::uint64_t b) { return a | b; }
+std::uint64_t Xor64(std::uint64_t a, std::uint64_t b) { return a ^ b; }
+std::uint64_t Write64(std::uint64_t, std::uint64_t b) { return b; }
+std::uint64_t MinF64(std::uint64_t a, std::uint64_t b) { return std::bit_cast<std::uint64_t>(std::min(std::bit_cast<double>(a), std::bit_cast<double>(b))); }
+std::uint64_t MaxF64(std::uint64_t a, std::uint64_t b) { return std::bit_cast<std::uint64_t>(std::max(std::bit_cast<double>(a), std::bit_cast<double>(b))); }
+
+constexpr std::array<U64Case, 15> U64Cases{{
+    {0xc0u, "ds_add_src2_u64", Add64, false},
+    {0xc1u, "ds_sub_src2_u64", Sub64, false},
+    {0xc2u, "ds_rsub_src2_u64", Rsub64, false},
+    {0xc3u, "ds_inc_src2_u64", Inc64, false},
+    {0xc4u, "ds_dec_src2_u64", Dec64, false},
+    {0xc5u, "ds_min_src2_i64", MinI64, false},
+    {0xc6u, "ds_max_src2_i64", MaxI64, false},
+    {0xc7u, "ds_min_src2_u64", MinU64, false},
+    {0xc8u, "ds_max_src2_u64", MaxU64, false},
+    {0xc9u, "ds_and_src2_b64", And64, false},
+    {0xcau, "ds_or_src2_b64", Or64, false},
+    {0xcbu, "ds_xor_src2_b64", Xor64, false},
+    {0xcdu, "ds_write_src2_b64", Write64, false},
+    {0xd2u, "ds_min_src2_f64", MinF64, true},
+    {0xd3u, "ds_max_src2_f64", MaxF64, true},
+}};
+
+std::pair<std::uint64_t, std::uint64_t> U64Inputs(std::uint32_t tid, bool floating) {
+    if (floating) {
+        const double lhs = static_cast<double>(static_cast<std::int32_t>(tid) - 11) * 1.25 + 0.5;
+        const double rhs = static_cast<double>(13u - tid) * 0.375 - 2.0;
+        return {std::bit_cast<std::uint64_t>(lhs), std::bit_cast<std::uint64_t>(rhs)};
+    }
+    switch (tid % 4u) {
+    case 0u: return {0xffff'ffff'0000'0010ull + tid, 0x0000'0001'0000'0021ull + tid};
+    case 1u: return {tid % 9u, (tid * 3u) % 11u};
+    case 2u: return {std::bit_cast<std::uint64_t>(-17ll - tid), std::bit_cast<std::uint64_t>(23ll + tid)};
+    default: return {0x8000'0000'0000'0010ull + tid, 0x7fff'ffff'ffff'fff0ull - tid};
+    }
+}
+
+std::vector<std::uint32_t> U64Shader(const U64Case& test, std::uint32_t group) {
+    std::vector<std::uint32_t> code(Code.begin(), Code.end());
+    code[3] = 0x340c0083u;
+    code[160] = 0x34020087u;
+    code[162] = 0xe0741000u;
+    code[163] = 0x80011801u;
+    const std::uint32_t write0 = 8u + group * 12u;
+    const std::uint32_t write1 = write0 + 2u;
+    const std::uint32_t operation = write0 + 4u;
+    const std::uint32_t read = write0 + 6u;
+    code[write0] = 0xd9340000u;
+    code[write0 + 1u] = 0x00000207u;
+    code[write1] = 0xd9340000u;
+    code[write1 + 1u] = 0x00000408u;
+    code[operation] = (code[operation] & ~(0xffu << 18u)) | (test.encoding << 18u);
+    code[read] = (code[read] & ~(0xffu << 18u)) | (0x76u << 18u);
+    code[read + 1u] = 0x18000007u;
+    return code;
+}
+
+void CheckU64Cases(AgcDriver::VulkanDevice& device) {
+    for (std::uint32_t operation = 0; operation < U64Cases.size(); ++operation) {
+        const auto& test = U64Cases[operation];
+        for (std::uint32_t tid = 0; tid < Threads; ++tid) {
+            const auto [a, b] = U64Inputs(tid, test.floating);
+            Input[tid * Inputs + 0u] = static_cast<std::uint32_t>(a);
+            Input[tid * Inputs + 1u] = static_cast<std::uint32_t>(a >> 32u);
+            Input[tid * Inputs + 2u] = static_cast<std::uint32_t>(b);
+            Input[tid * Inputs + 3u] = static_cast<std::uint32_t>(b >> 32u);
+        }
+        Output.fill(0xdeadbeefu);
+        const auto code = U64Shader(test, operation % 13u);
+        const auto result = Compile(device, code);
+        device.Dispatch(result, 1, 1, 1, {}, reinterpret_cast<std::uintptr_t>(code.data()));
+        device.WaitIdle();
+        for (std::uint32_t tid = 0; tid < Threads; ++tid) {
+            const auto [a, b] = U64Inputs(tid, test.floating);
+            const std::uint32_t low = Output[tid * ExtendedResults + 0u];
+            const std::uint32_t high = Output[tid * ExtendedResults + 1u];
+            const std::uint64_t actual = low | (static_cast<std::uint64_t>(high) << 32u);
+            const std::uint64_t expected = test.expected(a, b);
+            Require(actual == expected, std::string("lds src2 u64: lane ") + std::to_string(tid) + " " + test.name + " is " + std::to_string(actual) + ", expected " + std::to_string(expected));
+        }
+    }
+}
+
 }
 
 int main() {
@@ -181,6 +283,7 @@ int main() {
         CheckLanes();
         CheckAddressOffsetRejected(*device);
         CheckFloats(*device);
+        CheckU64Cases(*device);
         std::puts("lds src2 tests passed");
         return 0;
     } catch (const std::exception& error) {
